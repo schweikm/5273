@@ -2,15 +2,18 @@
 // Marc Schweikert
 // CSCI 5273 Fall 2014
 
+#include <cassert>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
+#include <string>
 #include <unistd.h>
-//#include <sys/types.h>
-#include <sys/socket.h>
+
 #include <netinet/in.h>
-//#include <netdb.h>
+#include <sys/socket.h>
+
+using std::string;
 
 
 /* constants */
@@ -28,10 +31,12 @@ int main() {
 	// create the server socket
 	const int server_socket = create_server_socket();
 
+	//
 	// begin main loop
-	unsigned char receive_buffer[BUFFER_SIZE];	// receive buffer
+	//
+	char receive_buffer[BUFFER_SIZE];
 	struct sockaddr_in remote_addr;
-	socklen_t addrlen = sizeof(remote_addr);
+	socklen_t remote_addr_len = sizeof(remote_addr);
 
 	for (;;) {
 		// zero out data
@@ -39,11 +44,23 @@ int main() {
 		memset(&remote_addr, 0, sizeof(remote_addr));
 
 		// receive data on the socket
-		const int recv_len = recvfrom(server_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&remote_addr, &addrlen);
-		printf("received %d bytes\n", recv_len);
-		if (recv_len > 0) {
+		const ssize_t recv_len = recvfrom(server_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
+		if (-1 == recv_len) {
+			fprintf(stderr, "Error during call to recvfrom().  Error is %s\n", strerror(errno));
+		}
+		else if (0 == recv_len) {
+			printf("recvfrom() encountered orderly shutdown");
+			break;
+		}
+		else {
+			// prevent buffer overflow
+			assert(recv_len < BUFFER_SIZE);
 			receive_buffer[recv_len] = 0;
-			printf("received message: \"%s\"\n", receive_buffer);
+			receive_buffer[BUFFER_SIZE - 1] = 0;
+
+			// parse message
+			const string message(receive_buffer);
+			printf("received message:  |%s|\n", message.c_str());
 		}
 	}
 
