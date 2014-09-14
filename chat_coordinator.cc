@@ -18,10 +18,18 @@ using std::string;
 
 /* constants */
 const int BUFFER_SIZE = 256;
+const int MAX_SESSION_NAME_SIZE = 8;
+
+const string CMD_START = "Start";
+const string CMD_FIND = "Find";
+const string CMD_TERMINATE = "Terminate";
 
 
 /* function declarations */
-int create_server_socket();
+int create_server_socket(int& in_server_port);
+void do_start(const string& in_session_name);
+void do_find(const string& in_session_name);
+void do_terminate(const string& in_session_name);
 
 
 /*
@@ -29,7 +37,11 @@ int create_server_socket();
  */
 int main() {
 	// create the server socket
-	const int server_socket = create_server_socket();
+	int server_port = 0;
+	const int server_socket = create_server_socket(server_port);
+
+	// print the UDP port numbe
+	printf("Chat Coordinator is running on port:  %d\n", server_port);
 
 	//
 	// begin main loop
@@ -59,8 +71,53 @@ int main() {
 			receive_buffer[BUFFER_SIZE - 1] = 0;
 
 			// parse message
-			const string message(receive_buffer);
-			printf("received message:  |%s|\n", message.c_str());
+			string message(receive_buffer);
+
+			// removing tailing newline
+			const size_t newline_index = message.find_last_of("\r\n");
+			message.erase(newline_index);
+
+			// begin parsing string
+			const size_t first_space = message.find_first_of(" ");
+			if (string::npos == first_space) {
+				fprintf(stderr, "Failed to find space in message.  Ignoring command.\n");
+				continue;
+			}
+
+			const string command = message.substr(0, first_space);
+			const string arguments = message.substr(first_space + 1);
+
+			// ensure we have valid strings
+			if (0 == command.size()) {
+				fprintf(stderr, "Parsed command has zero length.  Ignoring command.\n");
+				continue;
+			}
+
+			if (0 == arguments.size()) {
+				fprintf(stderr, "Parsed command arguments have zero length.  Ignoring command.\n");
+				continue;
+			}
+
+			// we only support 8 character names
+			string session_name = arguments;
+			if (arguments.length() > MAX_SESSION_NAME_SIZE) {
+				fprintf(stderr, "Chat session name is greater than %d characters - truncating.\n", MAX_SESSION_NAME_SIZE);
+				session_name = arguments.substr(0, MAX_SESSION_NAME_SIZE);
+			}
+
+			// perform the requested operation
+			if (CMD_START == command) {
+				do_start(session_name);
+			}
+			else if (CMD_FIND == command) {
+				do_find(session_name);
+			}
+			else if (CMD_TERMINATE == command) {
+				do_terminate(session_name);
+			}
+			else {
+				fprintf(stderr, "Unrecognized command:  %s\n", command.c_str());
+			}
 		}
 	}
 
@@ -71,7 +128,7 @@ int main() {
 /*
  * create_server_socket
  */
-int create_server_socket()
+int create_server_socket(int& in_server_port)
 {
 	// allocate a socket
 	const int server_socket = socket(PF_INET, SOCK_DGRAM, 0);
@@ -100,9 +157,34 @@ int create_server_socket()
 		exit(3);
 	}
 
-	// print the UDP port number
-	printf("Server port number is %d\n", ntohs(sin.sin_port));
+	in_server_port = ntohs(sin.sin_port);
 
 	return server_socket;
+}
+
+
+/*
+ * do_start
+ */
+void do_start(const string& in_session_name) {
+	const string debug(CMD_START + ": begin room |" + in_session_name.c_str() + "|");
+	printf("%s\n", debug.c_str());
+}
+
+
+/*
+ * do_find
+ */
+void do_find(const string& in_session_name) {
+	const string debug(CMD_FIND + " called with arguments:  |" + in_session_name.c_str() + "|");
+	printf("%s\n", debug.c_str());
+}
+
+/*
+ * do_terminate
+ */
+void do_terminate(const string& in_session_name) {
+	const string debug(CMD_TERMINATE + " called with arguments:  |" + in_session_name.c_str() + "|");
+	printf("%s\n", debug.c_str());
 }
 
