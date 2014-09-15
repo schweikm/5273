@@ -7,12 +7,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unistd.h>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+using std::map;
 using std::string;
 
 
@@ -26,21 +28,25 @@ const string CMD_TERMINATE = "Terminate";
 
 
 /* function declarations */
-int create_server_socket(int& in_server_port);
-void do_start(const string& in_session_name);
-void do_find(const string& in_session_name);
-void do_terminate(const string& in_session_name);
+int create_socket(const int, const int);
+unsigned int get_port_number(const int);
+void do_start(const string&, map<string, unsigned int>&);
+void do_find(const string&, const map<string, unsigned int>&);
+void do_terminate(const string&, map<string, unsigned int>&);
 
 
 /*
  * main
  */
 int main() {
+	// this will be the mapping between chat session names and TCP port numbers
+	map<string, unsigned int> chat_session_map;
+
 	// create the server socket
-	int server_port = 0;
-	const int server_socket = create_server_socket(server_port);
+	const int server_socket = create_socket(SOCK_DGRAM, 0);
 
 	// print the UDP port numbe
+	const int server_port = get_port_number(server_socket);
 	printf("Chat Coordinator is running on port:  %d\n", server_port);
 
 	//
@@ -107,13 +113,13 @@ int main() {
 
 			// perform the requested operation
 			if (CMD_START == command) {
-				do_start(session_name);
+				do_start(session_name, chat_session_map);
 			}
 			else if (CMD_FIND == command) {
-				do_find(session_name);
+				do_find(session_name, chat_session_map);
 			}
 			else if (CMD_TERMINATE == command) {
-				do_terminate(session_name);
+				do_terminate(session_name, chat_session_map);
 			}
 			else {
 				fprintf(stderr, "Unrecognized command:  %s\n", command.c_str());
@@ -128,10 +134,10 @@ int main() {
 /*
  * create_server_socket
  */
-int create_server_socket(int& in_server_port)
+int create_socket(const int in_socket_type, const int in_protocol)
 {
 	// allocate a socket
-	const int server_socket = socket(PF_INET, SOCK_DGRAM, 0);
+	const int server_socket = socket(PF_INET, in_socket_type, in_protocol);
 	if (server_socket < 0) {
 		fprintf(stderr, "Unable to create server socket.  Error is %s\n", strerror(errno));
 		exit (1);
@@ -150,32 +156,49 @@ int create_server_socket(int& in_server_port)
 		exit(2);
 	}
 
-	// find the port number that we were provided
+	return server_socket;
+}
+
+/*
+ * get_port_number
+ */
+unsigned int get_port_number(const int in_socket) {
+	struct sockaddr_in sin;
 	socklen_t socklen = sizeof(sin);
-	if (getsockname(server_socket, (struct sockaddr *)&sin, &socklen) < 0) {
+	memset(&sin, 0, sizeof(sin));
+
+	if (getsockname(in_socket, (struct sockaddr *)&sin, &socklen) < 0) {
 		fprintf(stderr, "getsockname called failed!  Error is %s\n", strerror(errno));
 		exit(3);
 	}
 
-	in_server_port = ntohs(sin.sin_port);
-
-	return server_socket;
+	return ntohs(sin.sin_port);
 }
 
 
 /*
  * do_start
  */
-void do_start(const string& in_session_name) {
-	const string debug(CMD_START + ": begin room |" + in_session_name.c_str() + "|");
-	printf("%s\n", debug.c_str());
+void do_start(const string& in_session_name, map<string, unsigned int>& in_chat_session_map) {
+	// see if an existing chat session is available
+	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
+		// new session
+		const int session_socket = create_socket(SOCK_STREAM, 0);
+		const int session_port = get_port_number(session_socket);
+
+		printf("Starting session |%s| on port |%d|\n", in_session_name.c_str(), session_port);
+		in_chat_session_map.insert(std::make_pair<string, unsigned int>(in_session_name, session_port));
+	}
+	else {
+		// found existing session
+	}
 }
 
 
 /*
  * do_find
  */
-void do_find(const string& in_session_name) {
+void do_find(const string& in_session_name, const map<string, unsigned int>& in_chat_session_map) {
 	const string debug(CMD_FIND + " called with arguments:  |" + in_session_name.c_str() + "|");
 	printf("%s\n", debug.c_str());
 }
@@ -183,7 +206,7 @@ void do_find(const string& in_session_name) {
 /*
  * do_terminate
  */
-void do_terminate(const string& in_session_name) {
+void do_terminate(const string& in_session_name, map<string, unsigned int>& in_chat_session_map) {
 	const string debug(CMD_TERMINATE + " called with arguments:  |" + in_session_name.c_str() + "|");
 	printf("%s\n", debug.c_str());
 }
