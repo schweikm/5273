@@ -29,10 +29,10 @@ const string CMD_TERMINATE = "Terminate";
 
 /* function declarations */
 int create_socket(const int, const int);
-unsigned int get_port_number(const int);
-void do_start(const string&, map<string, unsigned int>&);
-void do_find(const string&, const map<string, unsigned int>&);
-void do_terminate(const string&, map<string, unsigned int>&);
+int get_port_number(const int);
+void do_start(const string&, map<string, int>&);
+void do_find(const string&, const map<string, int>&);
+void do_terminate(const string&, map<string, int>&);
 
 
 /*
@@ -40,14 +40,14 @@ void do_terminate(const string&, map<string, unsigned int>&);
  */
 int main() {
 	// this will be the mapping between chat session names and TCP port numbers
-	map<string, unsigned int> chat_session_map;
+	map<string, int> chat_session_map;
 
 	// create the server socket
-	const int server_socket = create_socket(SOCK_DGRAM, 0);
+	const int coordinator_socket = create_socket(SOCK_DGRAM, 0);
 
-	// print the UDP port numbe
-	const int server_port = get_port_number(server_socket);
-	printf("Chat Coordinator is running on port:  %d\n", server_port);
+	// print the UDP port number
+	const int server_port = get_port_number(coordinator_socket);
+	printf("%d\n", server_port);
 
 	//
 	// begin main loop
@@ -62,7 +62,7 @@ int main() {
 		memset(&remote_addr, 0, sizeof(remote_addr));
 
 		// receive data on the socket
-		const ssize_t recv_len = recvfrom(server_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
+		const ssize_t recv_len = recvfrom(coordinator_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
 		if (-1 == recv_len) {
 			fprintf(stderr, "Error during call to recvfrom().  Error is %s\n", strerror(errno));
 		}
@@ -127,18 +127,18 @@ int main() {
 		}
 	}
 
-	close(server_socket);
+	close(coordinator__socket);
 	return 0;
 }
 
 /*
- * create_server_socket
+ * create_socket
  */
 int create_socket(const int in_socket_type, const int in_protocol)
 {
 	// allocate a socket
-	const int server_socket = socket(PF_INET, in_socket_type, in_protocol);
-	if (server_socket < 0) {
+	const int socket = socket(PF_INET, in_socket_type, in_protocol);
+	if (socket < 0) {
 		fprintf(stderr, "Unable to create server socket.  Error is %s\n", strerror(errno));
 		exit (1);
 	}
@@ -151,18 +151,18 @@ int create_socket(const int in_socket_type, const int in_protocol)
 	sin.sin_port=htons(0);				// request a port number to be allocated by bind
 
 	// bind the socket
-	if (bind(server_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+	if (bind(socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 		fprintf(stderr, "Unable to bind to port.  Error is %s\n", strerror(errno));
 		exit(2);
 	}
 
-	return server_socket;
+	return socket;
 }
 
 /*
  * get_port_number
  */
-unsigned int get_port_number(const int in_socket) {
+int get_port_number(const int in_socket) {
 	struct sockaddr_in sin;
 	socklen_t socklen = sizeof(sin);
 	memset(&sin, 0, sizeof(sin));
@@ -179,18 +179,22 @@ unsigned int get_port_number(const int in_socket) {
 /*
  * do_start
  */
-void do_start(const string& in_session_name, map<string, unsigned int>& in_chat_session_map) {
+void do_start(const string& in_session_name, map<string, int>& in_chat_session_map) {
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
 		// new session
 		const int session_socket = create_socket(SOCK_STREAM, 0);
 		const int session_port = get_port_number(session_socket);
 
-		printf("Starting session |%s| on port |%d|\n", in_session_name.c_str(), session_port);
-		in_chat_session_map.insert(std::make_pair<string, unsigned int>(in_session_name, session_port));
+		// start session server using fork and execl
+
+		// tell the client how to connect to the session server
+		printf("%d\n", session_port);
+		in_chat_session_map.insert(std::make_pair<string, int>(in_session_name, session_port));
 	}
 	else {
 		// found existing session
+		printf("-1\n");
 	}
 }
 
@@ -198,16 +202,20 @@ void do_start(const string& in_session_name, map<string, unsigned int>& in_chat_
 /*
  * do_find
  */
-void do_find(const string& in_session_name, const map<string, unsigned int>& in_chat_session_map) {
-	const string debug(CMD_FIND + " called with arguments:  |" + in_session_name.c_str() + "|");
-	printf("%s\n", debug.c_str());
+void do_find(const string& in_session_name, const map<string, int>& in_chat_session_map) {
+	const map<string, int>::const_iterator find_iterator = in_chat_session_map.find(in_session_name);
+	if ( in_chat_session_map.end() == find_iterator) {
+		printf("-1\n");
+	}
+	else {
+		printf("%d\n", find_iterator->second);
+	}
 }
 
 /*
  * do_terminate
  */
-void do_terminate(const string& in_session_name, map<string, unsigned int>& in_chat_session_map) {
-	const string debug(CMD_TERMINATE + " called with arguments:  |" + in_session_name.c_str() + "|");
-	printf("%s\n", debug.c_str());
+void do_terminate(const string& in_session_name, map<string, int>& in_chat_session_map) {
+	in_chat_session_map.erase(in_session_name);
 }
 
