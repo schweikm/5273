@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -16,6 +17,7 @@
 
 using std::map;
 using std::string;
+using std::stringstream;
 
 
 /* constants */
@@ -25,6 +27,8 @@ const int MAX_SESSION_NAME_SIZE = 8;
 const string CMD_START = "Start";
 const string CMD_FIND = "Find";
 const string CMD_TERMINATE = "Terminate";
+
+const string SERVER_EXE = "chat_server.exe";
 
 
 /* function declarations */
@@ -127,7 +131,7 @@ int main() {
 		}
 	}
 
-	close(coordinator__socket);
+	close(coordinator_socket);
 	return 0;
 }
 
@@ -137,9 +141,9 @@ int main() {
 int create_socket(const int in_socket_type, const int in_protocol)
 {
 	// allocate a socket
-	const int socket = socket(PF_INET, in_socket_type, in_protocol);
-	if (socket < 0) {
-		fprintf(stderr, "Unable to create server socket.  Error is %s\n", strerror(errno));
+	const int new_socket = socket(PF_INET, in_socket_type, in_protocol);
+	if (new_socket < 0) {
+		fprintf(stderr, "Unable to create socket.  Error is %s\n", strerror(errno));
 		exit (1);
 	}
 
@@ -151,12 +155,12 @@ int create_socket(const int in_socket_type, const int in_protocol)
 	sin.sin_port=htons(0);				// request a port number to be allocated by bind
 
 	// bind the socket
-	if (bind(socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+	if (bind(new_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 		fprintf(stderr, "Unable to bind to port.  Error is %s\n", strerror(errno));
 		exit(2);
 	}
 
-	return socket;
+	return new_socket;
 }
 
 /*
@@ -182,15 +186,34 @@ int get_port_number(const int in_socket) {
 void do_start(const string& in_session_name, map<string, int>& in_chat_session_map) {
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
-		// new session
 		const int session_socket = create_socket(SOCK_STREAM, 0);
 		const int session_port = get_port_number(session_socket);
 
-		// start session server using fork and execl
+		stringstream socket_fd_stream;
+		socket_fd_stream << session_socket;
+		const string socket_fd = socket_fd_stream.str();
 
-		// tell the client how to connect to the session server
-		printf("%d\n", session_port);
-		in_chat_session_map.insert(std::make_pair<string, int>(in_session_name, session_port));
+		// start session server using fork and execl
+		if (0 == fork()) {
+			//
+			// CHILD PROCESS
+			//
+
+			// let's replace ourself with the chat_server program
+			// we need to inform the child process of the file descriptor for it's TCP socket
+			execl(SERVER_EXE.c_str(), socket_fd.c_str(), NULL);
+
+			// this call never returns.  we are now in the other program - goodbye!
+	}
+		else {
+			//
+			// PARENT PROCESS
+			//
+
+			// tell the client how to connect to the session server
+			printf("%d\n", session_port);
+			in_chat_session_map.insert(std::make_pair<string, int>(in_session_name, session_port));
+		}
 	}
 	else {
 		// found existing session
