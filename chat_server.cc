@@ -2,26 +2,30 @@
 // Marc Schweikert
 // CSCI 5273
 
+#include <cassert>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <unistd.h>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+using std::string;
+
 /* constants */
 const int QUEUE_LENGTH = 32;
+const int BUFFER_SIZE = 4096;
 
-int echo(const int);
 
 /*
  * main
  */
 int main(const int, const char* const argv[]) {
-	const int server_socket = atoi(argv[1]);
-	printf("Chat Server socket |%d|\n", server_socket);
+	const int server_socket = atoi(argv[0]);
+	printf("Chat Server started\n");
 
 	// our socket has already been created and bound
 	// we just need to start listening
@@ -33,8 +37,9 @@ int main(const int, const char* const argv[]) {
 	// BEGIN MAIN LOOP
 	//
 
-	fd_set rfds;			/* read file descriptor set */
-	fd_set afds;			/* active file descriptor set */
+	struct sockaddr_in fsin;    /* the from address of a client */
+	fd_set  rfds;           /* read file descriptor set */
+	fd_set  afds;           /* active file descriptor set   */
 
 	int nfds = getdtablesize();
 	FD_ZERO(&afds);
@@ -42,50 +47,55 @@ int main(const int, const char* const argv[]) {
 
 	for(;;) {
 		memcpy(&rfds, &afds, sizeof(rfds));
+		int client_socket = -1;
 
-		if (select(nfds, &rfds, (fd_set *)0, (fd_set *)0, (struct timeval *)0) < 0) {
-			fprintf(stderr, "Error in select.  Error is %s\n", strerror(errno));
+		if (select(nfds, &rfds, (fd_set *)0, (fd_set *)0,(struct timeval *)0) < 0) {
+			fprintf(stderr, "select: %s\n", strerror(errno));
 		}
 
-		int client_socket = -1;
 		if (FD_ISSET(server_socket, &rfds)) {
-			struct sockaddr_in fsin;	/* the from address of a client */
 			unsigned int alen = sizeof(fsin);
 			client_socket = accept(server_socket, (struct sockaddr *)&fsin, &alen);
 
 			if (client_socket < 0) {
-				fprintf(stderr, "accept failed: %s\n", strerror(errno));
+				fprintf(stderr, "accept: %s\n", strerror(errno));
 			}
 
 			FD_SET(client_socket, &afds);
 		}
 
 		for (int fd = 0; fd < nfds; ++fd) {
-			if (fd != client_socket && FD_ISSET(fd, &rfds)) {
-				if (0 == echo(fd)) {
+			if (fd != server_socket && FD_ISSET(fd, &rfds)) {
+				// read the client message
+				char recv_buffer[BUFFER_SIZE];
+				memset(recv_buffer, 0, BUFFER_SIZE);
+
+				const int num_bytes = read(fd, recv_buffer, sizeof recv_buffer);
+				if (num_bytes < 0) {
 					close(fd);
 					FD_CLR(fd, &afds);
+					fprintf(stderr, "echo read: %s\n", strerror(errno));
 				}
+
+				// prevent buffer overflow
+				assert(num_bytes < BUFFER_SIZE);
+				recv_buffer[num_bytes] = 0;
+				recv_buffer[BUFFER_SIZE - 1] = 0;
+
+				// parse message
+				string message(recv_buffer);
+
+				// removing tailing newline
+				const size_t newline_index = message.find_last_of("\r\n");
+				message.erase(newline_index);
+
+				// debug echo
+				printf("GOT MESSAGE!  Client |%d| - parsed message:  |%s|\n", fd, message.c_str());
 			}
 		}
 	}
 
 	close(server_socket);
 	return 0;
-}
-
-int echo(const int fd) {
-	char buf[1024];
-	int cc = read(fd, buf, sizeof buf);
-
-	if (cc < 0) {
-		fprintf(stderr, "echo read: %s\n", strerror(errno));
-	}
-
-	if (cc && write(fd, buf, cc) < 0) {
-		fprintf(stderr, "echo write: %s\n", strerror(errno));
-	}
-
-	return cc;
 }
 

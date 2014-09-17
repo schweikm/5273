@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
-#include <sstream>
+#include <signal.h>
 #include <string>
 #include <unistd.h>
 
@@ -17,7 +17,6 @@
 
 using std::map;
 using std::string;
-using std::stringstream;
 
 
 /* constants */
@@ -189,11 +188,13 @@ void do_start(const string& in_session_name, map<string, int>& in_chat_session_m
 		const int session_socket = create_socket(SOCK_STREAM, 0);
 		const int session_port = get_port_number(session_socket);
 
-		stringstream socket_fd_stream;
-		socket_fd_stream << session_socket;
-		const string socket_fd = socket_fd_stream.str();
+		const int buf_size = 4;
+		char fd_str[buf_size];
+		memset(fd_str, 0, buf_size);
+		sprintf(fd_str, "%d", session_socket);
 
 		// start session server using fork and execl
+		signal(SIGCHLD, SIG_IGN);
 		if (0 == fork()) {
 			//
 			// CHILD PROCESS
@@ -201,7 +202,7 @@ void do_start(const string& in_session_name, map<string, int>& in_chat_session_m
 
 			// let's replace ourself with the chat_server program
 			// we need to inform the child process of the file descriptor for it's TCP socket
-			execl(SERVER_EXE.c_str(), socket_fd.c_str(), NULL);
+			execl(SERVER_EXE.c_str(), fd_str, NULL);
 
 			// this call never returns.  we are now in the other program - goodbye!
 	}
