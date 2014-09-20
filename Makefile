@@ -1,6 +1,6 @@
 # Macro definitions
 CXX = /usr/bin/g++
-CXXFLAGS = -ansi -pedantic -Wall -Wextra -Weffc++ -g3
+CXXFLAGS = -DDEBUG -ansi -pedantic -Wall -Wextra -Weffc++ -g3
 RM = /bin/rm -f
 
 # make targets

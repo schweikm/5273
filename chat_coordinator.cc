@@ -20,7 +20,7 @@ using std::string;
 
 
 /* constants */
-const int BUFFER_SIZE = 256;
+const int BUFFER_SIZE = 4096;
 const int MAX_SESSION_NAME_SIZE = 8;
 
 const string CMD_START = "Start";
@@ -33,9 +33,10 @@ const string SERVER_EXE = "chat_server.exe";
 /* function declarations */
 int create_socket(const int, const int);
 int get_port_number(const int);
-void do_start(const string&, map<string, int>&);
-void do_find(const string&, const map<string, int>&);
+int do_start(const string&, map<string, int>&);
+int do_find(const string&, const map<string, int>&);
 void do_terminate(const string&, map<string, int>&);
+void send_udp_code(const int, const int, const struct sockaddr*, const socklen_t*);
 
 
 /*
@@ -50,7 +51,7 @@ int main() {
 
 	// print the UDP port number
 	const int server_port = get_port_number(coordinator_socket);
-	printf("%d\n", server_port);
+	printf("Chat Coordinator started on UDP port %d\n", server_port);
 
 	//
 	// begin main loop
@@ -75,12 +76,18 @@ int main() {
 		}
 		else {
 			// prevent buffer overflow
+			#ifdef DEBUG
 			assert(recv_len < BUFFER_SIZE);
+			#endif
 			receive_buffer[recv_len] = 0;
 			receive_buffer[BUFFER_SIZE - 1] = 0;
 
 			// parse message
 			string message(receive_buffer);
+			if (0 == message.length()) {
+				fprintf(stderr, "Chat Coordinator - received NULL command\n");
+				continue;
+			}
 
 			// removing tailing newline
 			const size_t newline_index = message.find_last_of("\r\n");
@@ -90,6 +97,7 @@ int main() {
 			const size_t first_space = message.find_first_of(" ");
 			if (string::npos == first_space) {
 				fprintf(stderr, "Failed to find space in message.  Ignoring command.\n");
+				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
 				continue;
 			}
 
@@ -99,11 +107,13 @@ int main() {
 			// ensure we have valid strings
 			if (0 == command.size()) {
 				fprintf(stderr, "Parsed command has zero length.  Ignoring command.\n");
+				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
 				continue;
 			}
 
 			if (0 == arguments.size()) {
 				fprintf(stderr, "Parsed command arguments have zero length.  Ignoring command.\n");
+				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
 				continue;
 			}
 
@@ -116,16 +126,19 @@ int main() {
 
 			// perform the requested operation
 			if (CMD_START == command) {
-				do_start(session_name, chat_session_map);
+				const int code = do_start(session_name, chat_session_map);
+				send_udp_code(coordinator_socket, code, (struct sockaddr *)&remote_addr, &remote_addr_len);
 			}
 			else if (CMD_FIND == command) {
-				do_find(session_name, chat_session_map);
+				const int code = do_find(session_name, chat_session_map);
+				send_udp_code(coordinator_socket, code, (struct sockaddr *)&remote_addr, &remote_addr_len);
 			}
 			else if (CMD_TERMINATE == command) {
 				do_terminate(session_name, chat_session_map);
 			}
 			else {
-				fprintf(stderr, "Unrecognized command:  %s\n", command.c_str());
+				fprintf(stderr, "Chat Coordinator - unrecognized command:  ->%s<-\n", command.c_str());
+				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
 			}
 		}
 	}
@@ -182,20 +195,24 @@ int get_port_number(const int in_socket) {
 /*
  * do_start
  */
-void do_start(const string& in_session_name, map<string, int>& in_chat_session_map) {
+int do_start(const string& in_session_name, map<string, int>& in_chat_session_map) {
+	int return_code = 0;
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
 		const int session_socket = create_socket(SOCK_STREAM, 0);
 		const int session_port = get_port_number(session_socket);
 
-		const int buf_size = 4;
-		char fd_str[buf_size];
-		memset(fd_str, 0, buf_size);
+		char fd_str[BUFFER_SIZE];
+		memset(fd_str, 0, BUFFER_SIZE);
 		sprintf(fd_str, "%d", session_socket);
 
 		// start session server using fork and execl
 		signal(SIGCHLD, SIG_IGN);
-		if (0 == fork()) {
+		const pid_t fork_code = fork();
+		if (-1 == fork_code) {
+			fprintf(stderr, "fork called failed!  Error is %s\n", strerror(errno));
+		}
+		else if (0 == fork_code) {
 			//
 			// CHILD PROCESS
 			//
@@ -205,35 +222,36 @@ void do_start(const string& in_session_name, map<string, int>& in_chat_session_m
 			execl(SERVER_EXE.c_str(), fd_str, NULL);
 
 			// this call never returns.  we are now in the other program - goodbye!
-	}
+		}
 		else {
 			//
 			// PARENT PROCESS
 			//
 
 			// tell the client how to connect to the session server
-			printf("%d\n", session_port);
+			printf("Session \"%s\" started on TCP port %d\n", in_session_name.c_str(), session_port);
 			in_chat_session_map.insert(std::make_pair<string, int>(in_session_name, session_port));
+			return_code = session_port;
 		}
 	}
 	else {
-		// found existing session
-		printf("-1\n");
+		return_code = -1;
 	}
+
+	return return_code;
 }
 
 
 /*
  * do_find
  */
-void do_find(const string& in_session_name, const map<string, int>& in_chat_session_map) {
+int do_find(const string& in_session_name, const map<string, int>& in_chat_session_map) {
 	const map<string, int>::const_iterator find_iterator = in_chat_session_map.find(in_session_name);
 	if ( in_chat_session_map.end() == find_iterator) {
-		printf("-1\n");
+		return -1;
 	}
-	else {
-		printf("%d\n", find_iterator->second);
-	}
+
+	return find_iterator->second;
 }
 
 /*
@@ -241,5 +259,20 @@ void do_find(const string& in_session_name, const map<string, int>& in_chat_sess
  */
 void do_terminate(const string& in_session_name, map<string, int>& in_chat_session_map) {
 	in_chat_session_map.erase(in_session_name);
+}
+
+void send_udp_code(const int in_socket, const int in_code, const struct sockaddr* in_to, const socklen_t* in_tolen) {
+	char ret_str[BUFFER_SIZE];
+	memset(ret_str, 0, BUFFER_SIZE);
+	sprintf(ret_str, "%d", in_code);
+
+	#ifdef DEBUG
+	printf("Chat Coordinator sending UDP message |%s|\n", ret_str);
+	#endif
+
+	// send the code
+	if (-1 == sendto(in_socket, ret_str, BUFFER_SIZE, 0, in_to, *in_tolen)) {
+		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+	}
 }
 
