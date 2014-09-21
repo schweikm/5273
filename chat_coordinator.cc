@@ -33,7 +33,7 @@ const string SERVER_EXE = "chat_server.exe";
 /* function declarations */
 int create_socket(const int, const int);
 int get_port_number(const int);
-int do_start(const string&, map<string, int>&);
+int do_start(const string&, map<string, int>&, const int);
 int do_find(const string&, const map<string, int>&);
 void do_terminate(const string&, map<string, int>&);
 void send_udp_code(const int, const int, const struct sockaddr*, const socklen_t*);
@@ -126,7 +126,7 @@ int main() {
 
 			// perform the requested operation
 			if (CMD_START == command) {
-				const int code = do_start(session_name, chat_session_map);
+				const int code = do_start(session_name, chat_session_map, server_port);
 				send_udp_code(coordinator_socket, code, (struct sockaddr *)&remote_addr, &remote_addr_len);
 			}
 			else if (CMD_FIND == command) {
@@ -195,16 +195,22 @@ int get_port_number(const int in_socket) {
 /*
  * do_start
  */
-int do_start(const string& in_session_name, map<string, int>& in_chat_session_map) {
+int do_start(const string& in_session_name, map<string, int>& in_chat_session_map, const int in_server_port) {
 	int return_code = 0;
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
 		const int session_socket = create_socket(SOCK_STREAM, 0);
 		const int session_port = get_port_number(session_socket);
 
+		// socket file descriptor
 		char fd_str[BUFFER_SIZE];
 		memset(fd_str, 0, BUFFER_SIZE);
 		sprintf(fd_str, "%d", session_socket);
+
+		// coordinator port number
+		char port_str[BUFFER_SIZE];
+		memset(port_str, 0, BUFFER_SIZE);
+		sprintf(port_str, "%d", in_server_port);
 
 		// start session server using fork and execl
 		signal(SIGCHLD, SIG_IGN);
@@ -219,7 +225,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 
 			// let's replace ourself with the chat_server program
 			// we need to inform the child process of the file descriptor for it's TCP socket
-			execl(SERVER_EXE.c_str(), fd_str, NULL);
+			execl(SERVER_EXE.c_str(), fd_str, port_str, NULL);
 
 			// this call never returns.  we are now in the other program - goodbye!
 		}
