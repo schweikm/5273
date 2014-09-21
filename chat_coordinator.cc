@@ -89,9 +89,9 @@ int main() {
 				continue;
 			}
 
-			// removing tailing newline
-			const size_t newline_index = message.find_last_of("\r\n");
-			message.erase(newline_index);
+			#ifdef DEBUG
+			printf("DEBUG:  coordinator received raw command |%s|\n", message.c_str());
+			#endif
 
 			// begin parsing string
 			const size_t first_space = message.find_first_of(" ");
@@ -225,7 +225,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 
 			// let's replace ourself with the chat_server program
 			// we need to inform the child process of the file descriptor for it's TCP socket
-			execl(SERVER_EXE.c_str(), fd_str, port_str, NULL);
+			execl(SERVER_EXE.c_str(), fd_str, port_str, in_session_name.c_str(), NULL);
 
 			// this call never returns.  we are now in the other program - goodbye!
 		}
@@ -271,13 +271,14 @@ void send_udp_code(const int in_socket, const int in_code, const struct sockaddr
 	char ret_str[BUFFER_SIZE];
 	memset(ret_str, 0, BUFFER_SIZE);
 	sprintf(ret_str, "%d", in_code);
+	const size_t ret_len = strlen(ret_str);
 
 	#ifdef DEBUG
 	printf("Chat Coordinator sending UDP message |%s|\n", ret_str);
 	#endif
 
 	// send the code
-	if (-1 == sendto(in_socket, ret_str, BUFFER_SIZE, 0, in_to, *in_tolen)) {
+	if (-1 == sendto(in_socket, ret_str, ret_len, 0, in_to, *in_tolen)) {
 		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
 	}
 }

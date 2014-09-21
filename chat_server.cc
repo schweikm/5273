@@ -26,10 +26,14 @@ const int BUFFER_SIZE = 4096;
 const int MESSAGE_MAX_LENGTH = 80;
 const int RECEIVE_TIMEOUT = 60;  // seconds
 
+/* Chat Server Commands */
 const string CMD_SUBMIT = "Submit";
 const string CMD_GET_NEXT = "GetNext";
 const string CMD_GET_ALL = "GetAll";
 const string CMD_LEAVE = "Leave";
+
+/* Chat Coordinator Commands */
+const string CMD_COORD_TERM = "Terminate";
 
 /* function declarations */
 void do_submit(const string&, vector<string>&);
@@ -37,6 +41,7 @@ void do_get_next(const int, map<int, int>&, const vector<string>&);
 void do_get_all(const int, map<int, int>&, const vector<string>&);
 int send_chat_messages(const int, const vector<string>&, const unsigned int, const unsigned int);
 void send_client_error(const int);
+void send_coord_term(const int, const string&);
 
 
 /*
@@ -45,7 +50,8 @@ void send_client_error(const int);
 int main(const int, const char* const argv[]) {
 	const int server_socket = atoi(argv[0]);
 	const int coordinator_port = atoi(argv[1]);
-	printf("Chat Server started.  Coordinator UDP port is %d\n", coordinator_port);
+	const string session_name = argv[2];
+	printf("Chat Server session \"%s\" started.  Coordinator UDP port is %d\n", session_name.c_str(), coordinator_port);
 
 	// let's start up our data structure
 	map<int, int> next_message_map;
@@ -89,13 +95,7 @@ int main(const int, const char* const argv[]) {
 			printf("Chat server closing after select timeout!\n");
 
 			// tell the coordinator that we are exiting
-			char term_str[BUFFER_SIZE];
-			memset(term_str, 0, BUFFER_SIZE);
-			sprintf(term_str, "Terminate");
-
-//			if (-1 == sendto(server_socket, term_str, BUFFER_SIZE, 0, in_to, *in_tolen)) {
-//				fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-//			}  
+			send_coord_term(coordinator_port, session_name);
 
 			// clean up and exit
 			close(server_socket);
@@ -140,9 +140,9 @@ int main(const int, const char* const argv[]) {
 				// parse message
 				string message(recv_buffer);
 
-				// removing tailing newline
-				const size_t newline_index = message.find_last_of("\r\n");
-				message.erase(newline_index);
+				#ifdef DEBUG
+				printf("message is |%s|\n", message.c_str());
+				#endif
 
 				// try to split the string
 				const size_t first_space = message.find_first_of(" ");
@@ -200,12 +200,6 @@ void do_submit(const string& in_message, vector<string>& in_all_messages) {
 
 	// store the message in the chat history
 	in_all_messages.push_back(in_message);
-
-	#ifdef DEBUG
-	for (vector<string>::const_iterator it = in_all_messages.begin() ; it != in_all_messages.end(); ++it) {
-		printf("|%s|\n", (*it).c_str());
-	}
-	#endif
 }
 
 /*
@@ -284,7 +278,7 @@ int send_chat_messages(const int in_client_socket, const vector<string>& in_all_
 		printf("Chat Server - sending      |%s|\n", message_buffer);
 		#endif
 
-    	if (-1 == send(in_client_socket, message_buffer, BUFFER_SIZE, 0)) {
+    	if (-1 == send(in_client_socket, message_buffer, message_length, 0)) {
 	        fprintf(stderr, "get send called failed!  Error is %s\n", strerror(errno));
 			return -1;
 	    }   
@@ -300,14 +294,49 @@ void send_client_error(const int in_socket) {
     char ret_str[BUFFER_SIZE];
     memset(ret_str, 0, BUFFER_SIZE);
     sprintf(ret_str, "%d", -1);
+	const size_t ret_len = strlen(ret_str);
 
     #ifdef DEBUG
     printf("Chat Server sending error to client |%d|\n", in_socket);
     #endif
 
     // send the code
-    if (-1 == send(in_socket, ret_str, BUFFER_SIZE, 0)) {
+    if (-1 == send(in_socket, ret_str, ret_len, 0)) {
         fprintf(stderr, "send called failed!  Error is %s\n", strerror(errno));
     }   
+}
+
+void send_coord_term(const int in_coordinator_port, const string& in_session_name) {
+	// create new UDP socket
+	const int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+	// address
+	struct sockaddr_in si_me;
+	memset((char *) &si_me, 0, sizeof(si_me));     
+	si_me.sin_family = AF_INET;
+	si_me.sin_port = htons(0);
+	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	bind(udp_socket, (struct sockaddr*)&si_me, sizeof(si_me) );
+
+	char term_str[BUFFER_SIZE];
+	memset(term_str, 0, BUFFER_SIZE);
+	sprintf(term_str, "%s %s", CMD_COORD_TERM.c_str(), in_session_name.c_str());
+	const size_t term_len = strlen(term_str);
+
+	// communicate over UDP
+	struct sockaddr_in coord_addr;
+	memset((char *)&coord_addr, 0, sizeof(coord_addr));
+	coord_addr.sin_family = AF_INET;
+	coord_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	coord_addr.sin_port = htons(in_coordinator_port);
+	socklen_t coord_addr_len = sizeof(coord_addr);
+
+	if (-1 == sendto(udp_socket, term_str, term_len, 0, (struct sockaddr *)&coord_addr, coord_addr_len)) {
+		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+	}  
+
+	// clean up and exit
+	close(udp_socket);
 }
 
