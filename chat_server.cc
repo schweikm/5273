@@ -122,7 +122,7 @@ int main(const int, const char* const argv[]) {
 				char recv_buffer[BUFFER_SIZE];
 				memset(recv_buffer, 0, BUFFER_SIZE);
 
-				const int num_bytes = read(client_socket, recv_buffer, sizeof recv_buffer);
+				const int num_bytes = recv(client_socket, recv_buffer, sizeof recv_buffer, 0);
 				if (num_bytes <= 0) {
 					close(client_socket);
 					FD_CLR(client_socket, &afds);
@@ -131,18 +131,16 @@ int main(const int, const char* const argv[]) {
 				}
 
 				// prevent buffer overflow
-				#ifdef DEBUG
 				assert(num_bytes < BUFFER_SIZE);
-				#endif
 				recv_buffer[num_bytes] = 0;
 				recv_buffer[BUFFER_SIZE - 1] = 0;
 
+				#ifdef DEBUG
+				printf("DEBUG:  chat_server - received |%s|\n", recv_buffer);
+				#endif
+
 				// parse message
 				string message(recv_buffer);
-
-				#ifdef DEBUG
-				printf("message is |%s|\n", message.c_str());
-				#endif
 
 				// try to split the string
 				const size_t first_space = message.find_first_of(" ");
@@ -152,8 +150,6 @@ int main(const int, const char* const argv[]) {
 				if (string::npos != first_space) {
 					command = message.substr(0, first_space); 
 					arguments = message.substr(first_space + 1); 
-					// add the newline character back
-					arguments.append("\n");
 				}
 
 				// perform the requested operation
@@ -239,6 +235,21 @@ void do_get_all(const int in_client_socket, map<int, int>& in_next_message, cons
 
 	const int start_index = next_it->second;
 	const int stop_index = in_all_messages.size();
+
+	// we need to send the number of messages that will be sent first
+	char msgs_buffer[BUFFER_SIZE];
+	memset(msgs_buffer, 0, BUFFER_SIZE);
+	sprintf(msgs_buffer, "%d", stop_index - start_index);
+
+	#ifdef DEBUG
+	printf("DEBUG:  chat_server - sending |%s|\n", msgs_buffer);
+	#endif
+
+	if (-1 == send(in_client_socket, msgs_buffer, strlen(msgs_buffer), 0)) {
+		fprintf(stderr, "get send called failed!  Error is %s\n", strerror(errno));
+	}
+
+	// then send the messages
 	if (0 == send_chat_messages(in_client_socket, in_all_messages, start_index, stop_index)) {
 		// update the index if successful
 		in_next_message[in_client_socket] = stop_index;
@@ -272,13 +283,10 @@ int send_chat_messages(const int in_client_socket, const vector<string>& in_all_
 	    sprintf(message_buffer, "%lu %s", message_length, message.c_str());
 
 		#ifdef DEBUG
-		printf("Chat Server - start index  |%u|\n", start_index);
-		printf("Chat Server - stop  index  |%u|\n", stop_index);
-		printf("Chat Server - all msg size |%lu|\n", in_all_messages.size());
-		printf("Chat Server - sending      |%s|\n", message_buffer);
+		printf("DEBUG:  chat_server - sending |%s|\n", message_buffer);
 		#endif
 
-    	if (-1 == send(in_client_socket, message_buffer, message_length, 0)) {
+    	if (-1 == send(in_client_socket, message_buffer, strlen(message_buffer), 0)) {
 	        fprintf(stderr, "get send called failed!  Error is %s\n", strerror(errno));
 			return -1;
 	    }   
@@ -297,7 +305,7 @@ void send_client_error(const int in_socket) {
 	const size_t ret_len = strlen(ret_str);
 
     #ifdef DEBUG
-    printf("Chat Server sending error to client |%d|\n", in_socket);
+    printf("DEBUG:  chat_server - sending |%d|\n", in_socket);
     #endif
 
     // send the code
@@ -308,7 +316,7 @@ void send_client_error(const int in_socket) {
 
 void send_coord_term(const int in_coordinator_port, const string& in_session_name) {
 	// create new UDP socket
-	const int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+	const int udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
 	// address
 	struct sockaddr_in si_me;
@@ -331,6 +339,10 @@ void send_coord_term(const int in_coordinator_port, const string& in_session_nam
 	coord_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	coord_addr.sin_port = htons(in_coordinator_port);
 	socklen_t coord_addr_len = sizeof(coord_addr);
+
+	#ifdef DEBUG
+	printf("DEBUG:  chat_server - sending |%s|\n", term_str);
+	#endif
 
 	if (-1 == sendto(udp_socket, term_str, term_len, 0, (struct sockaddr *)&coord_addr, coord_addr_len)) {
 		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));

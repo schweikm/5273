@@ -47,7 +47,7 @@ int main() {
 	map<string, int> chat_session_map;
 
 	// create the server socket
-	const int coordinator_socket = create_socket(SOCK_DGRAM, 0);
+	const int coordinator_socket = create_socket(SOCK_DGRAM, IPPROTO_UDP);
 
 	// print the UDP port number
 	const int server_port = get_port_number(coordinator_socket);
@@ -76,11 +76,13 @@ int main() {
 		}
 		else {
 			// prevent buffer overflow
-			#ifdef DEBUG
 			assert(recv_len < BUFFER_SIZE);
-			#endif
 			receive_buffer[recv_len] = 0;
 			receive_buffer[BUFFER_SIZE - 1] = 0;
+
+			#ifdef DEBUG
+			printf("DEBUG:  chat_coordinator - received |%s|\n", receive_buffer);
+			#endif
 
 			// parse message
 			string message(receive_buffer);
@@ -88,10 +90,6 @@ int main() {
 				fprintf(stderr, "Chat Coordinator - received NULL command\n");
 				continue;
 			}
-
-			#ifdef DEBUG
-			printf("DEBUG:  coordinator received raw command |%s|\n", message.c_str());
-			#endif
 
 			// begin parsing string
 			const size_t first_space = message.find_first_of(" ");
@@ -199,7 +197,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 	int return_code = 0;
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
-		const int session_socket = create_socket(SOCK_STREAM, 0);
+		const int session_socket = create_socket(SOCK_STREAM, IPPROTO_TCP);
 		const int session_port = get_port_number(session_socket);
 
 		// socket file descriptor
@@ -274,7 +272,7 @@ void send_udp_code(const int in_socket, const int in_code, const struct sockaddr
 	const size_t ret_len = strlen(ret_str);
 
 	#ifdef DEBUG
-	printf("Chat Coordinator sending UDP message |%s|\n", ret_str);
+	printf("DEBUG:  chat_coordinator - sending UDP message |%s|\n", ret_str);
 	#endif
 
 	// send the code
