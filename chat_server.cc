@@ -21,7 +21,6 @@ using std::string;
 using std::vector;
 
 /* constants */
-const int QUEUE_LENGTH = 32;
 const int BUFFER_SIZE = 4096;
 const int MESSAGE_MAX_LENGTH = 80;
 const int RECEIVE_TIMEOUT = 60;  // seconds
@@ -56,12 +55,6 @@ int main(const int, const char* const argv[]) {
 	// let's start up our data structure
 	map<int, int> next_message_map;
 	vector<string> all_messages;
-
-	// our socket has already been created and bound
-	// we just need to start listening
-	if (listen(server_socket, QUEUE_LENGTH) < 0) {
-		fprintf(stderr, "Failed to listen on socket.  Error is %s\n", strerror(errno));
-	}
 
 	//
 	// BEGIN MAIN LOOP
@@ -289,7 +282,7 @@ int send_chat_messages(const int in_client_socket, const vector<string>& in_all_
     	if (-1 == send(in_client_socket, message_buffer, strlen(message_buffer), 0)) {
 	        fprintf(stderr, "get send called failed!  Error is %s\n", strerror(errno));
 			return -1;
-	    }   
+	    }
 	}
 
 	return 0;

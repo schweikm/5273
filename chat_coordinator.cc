@@ -20,6 +20,7 @@ using std::string;
 
 
 /* constants */
+const int QUEUE_LENGTH = 32;
 const int BUFFER_SIZE = 4096;
 const int MAX_SESSION_NAME_SIZE = 8;
 
@@ -199,6 +200,11 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
 		const int session_socket = create_socket(SOCK_STREAM, IPPROTO_TCP);
 		const int session_port = get_port_number(session_socket);
+
+		// start the socket listening for connections
+		if (listen(session_socket, QUEUE_LENGTH) < 0) {
+			fprintf(stderr, "Failed to listen on socket.  Error is %s\n", strerror(errno));
+		}
 
 		// socket file descriptor
 		char fd_str[BUFFER_SIZE];
