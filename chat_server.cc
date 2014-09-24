@@ -124,7 +124,7 @@ int main(const int, const char* const argv[]) {
 				}
 
 				// prevent buffer overflow
-				assert(num_bytes < BUFFER_SIZE);
+				assert(num_bytes <= BUFFER_SIZE);
 				recv_buffer[num_bytes] = 0;
 				recv_buffer[BUFFER_SIZE - 1] = 0;
 

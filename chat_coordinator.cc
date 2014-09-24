@@ -77,7 +77,7 @@ int main() {
 		}
 		else {
 			// prevent buffer overflow
-			assert(recv_len < BUFFER_SIZE);
+			assert(recv_len <= BUFFER_SIZE);
 			receive_buffer[recv_len] = 0;
 			receive_buffer[BUFFER_SIZE - 1] = 0;
 

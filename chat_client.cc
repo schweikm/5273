@@ -245,7 +245,7 @@ int send_udp_command(const int in_command_socket, const char* const in_coord_hos
 	memcpy(&si_coord.sin_addr, hostp->h_addr, sizeof(si_coord.sin_addr));
 
 	// create the sendable string
-	assert(in_command.length() < BUFFER_SIZE - 1);
+	assert(in_command.length() <= BUFFER_SIZE - 1);
 
 	char command_str[BUFFER_SIZE];
 	memset(command_str, 0, BUFFER_SIZE);
@@ -278,7 +278,7 @@ int send_udp_command(const int in_command_socket, const char* const in_coord_hos
 		}
 
 		// prevent buffer overflow
-		assert(recv_len < BUFFER_SIZE);
+		assert(recv_len <= BUFFER_SIZE);
 		receive_buffer[recv_len] = 0;
 		receive_buffer[BUFFER_SIZE - 1] = 0;
 
@@ -353,7 +353,7 @@ int receive_tcp(const int in_socket, char* in_recv_buffer, const int in_recv_buf
 	}
 
 	// prevent buffer overflow
-	assert(num_bytes < in_recv_buffer_len);
+	assert(num_bytes <= in_recv_buffer_len);
 	in_recv_buffer[num_bytes] = 0;
 	in_recv_buffer[in_recv_buffer_len - 1] = 0;
 
