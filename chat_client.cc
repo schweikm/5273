@@ -42,7 +42,6 @@ const string CMD_COORD_FIND = "Find";
 const string CMD_COORD_LEAVE = "Leave";
 
 /* function declarations */
-int send_udp_command(const int, const char* const, const int, const string&, const bool);
 int print_session_message(const int);
 
 
@@ -65,6 +64,14 @@ int main(const int argc, const char** const argv) {
 		fprintf(stderr, "Failed to create UDP socket to communicate with Chat Coordinator!\n");
 		return -1;
 	}
+
+    // create the info for the coordinator
+    struct sockaddr_in si_coord;
+	if( -1 == util_create_sockaddr(coordinator_host, coordinator_port, &si_coord)) {
+		fprintf(stderr, "Failed to create sockaddr for coordinator.  Error is %s\n", strerror(errno));
+		return -1;
+	}
+	int si_coord_len = sizeof(si_coord);
 
 	// this will hold our chat session sockets
 	string active_session_name = "";
@@ -100,43 +107,64 @@ int main(const int argc, const char** const argv) {
 		// execute command
 		if (CMD_START == user_command) {
 			// send the command to the chat coordinator
-			const int recv_val = send_udp_command(command_socket, coordinator_host, coordinator_port, CMD_START + " " + session_name, true);
-			if (-1 != recv_val) {
-				const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, recv_val);
-				if (-1 != new_socket) {
-					printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
-					active_session_name = session_name;
-					active_session_socket = new_socket;
+			const string my_command = CMD_START + " " + session_name;
+			if (-1 == util_send_udp(command_socket, my_command.c_str(), my_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+				fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
+			}
+			else {
+				int new_port;
+				if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
+					fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 				}
 				else {
-					fprintf(stderr, "Failed to start chat session \"%s\"\n", session_name.c_str());
+					if (-1 != new_port) {
+						const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, new_port);
+						if (-1 != new_socket) {
+							printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
+							active_session_name = session_name;
+							active_session_socket = new_socket;
+						}
+						else {
+							fprintf(stderr, "Failed to start chat session \"%s\"\n", session_name.c_str());
+						}
+					}
 				}
 			}
 		}
 		else if (CMD_JOIN == user_command) {
 			// send the command to the chat coordinator
-			const int recv_val = send_udp_command(command_socket, coordinator_host, coordinator_port, CMD_COORD_FIND + " " + session_name, true);
-			if (-1 != recv_val) {
-				// leave the current session if active
-				if (-1 != active_session_socket) {
-					if (0 == send_udp_command(command_socket, coordinator_host, coordinator_port, CMD_COORD_LEAVE + " " + active_session_name, false)) {
-						active_session_name = "";
-						active_session_socket = -1;
-					}
-					else {
-						fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
-					}
-				}
-
-				// join the new session
-				const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, recv_val);
-				if (-1 != new_socket) {
-					printf("You have joined the chat session \"%s\"\n", session_name.c_str());
-					active_session_name = session_name;
-					active_session_socket = new_socket;
+			const string my_command = CMD_COORD_FIND + " " + session_name;
+			if (-1 == util_send_udp(command_socket, my_command.c_str(), my_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+				fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
+			}
+			else {
+				int new_port;
+				if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
+					fprintf(stderr, "Failed to receive session port number.  Error is %s\n", strerror(errno));
 				}
 				else {
-					fprintf(stderr, "Failed to join chat session \"%s\"\n", session_name.c_str());
+					// leave the current session if active
+					if (-1 != active_session_socket) {
+						const string leave_command = CMD_COORD_LEAVE + " " + active_session_name;
+						if (0 == util_send_udp(command_socket, leave_command.c_str(), leave_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+							active_session_name = "";
+							active_session_socket = -1;
+						}
+						else {
+							fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
+						}
+					}
+
+					// join the new session
+					const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, new_port);
+					if (-1 != new_socket) {
+						printf("You have joined the chat session \"%s\"\n", session_name.c_str());
+						active_session_name = session_name;
+						active_session_socket = new_socket;
+					}
+					else {
+						fprintf(stderr, "Failed to join chat session \"%s\"\n", session_name.c_str());
+					}
 				}
 			}
 		}
@@ -190,9 +218,13 @@ int main(const int argc, const char** const argv) {
 			}
 		}
 		else if (CMD_LEAVE == user_command) {
-			if (0 == send_udp_command(command_socket, coordinator_host, coordinator_port, CMD_COORD_LEAVE + " " + active_session_name, false)) {
+			const string leave_command = CMD_COORD_LEAVE + " " + active_session_name;
+			if (0 == util_send_udp(command_socket, leave_command.c_str(), leave_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
 				active_session_name = "";
 				active_session_socket = -1;
+			}
+			else {
+				fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
 			}
 		}
 		else if (CMD_EXIT == user_command) {
@@ -207,74 +239,6 @@ int main(const int argc, const char** const argv) {
 	}
 
 	close(command_socket);
-	return 0;
-}
-
-int send_udp_command(const int in_command_socket, const char* const in_coord_host, const int in_coord_port, const string& in_command, const bool in_response) {
-	// create the info for the coordinator
-	struct sockaddr_in si_coord;
-	socklen_t si_coord_len = sizeof(si_coord);
-	memset(&si_coord, 0, si_coord_len);
-	si_coord.sin_family = AF_INET;
-	si_coord.sin_port = htons(in_coord_port);
-
-	// we may be passed a hostname rather than IP address
-	struct hostent *hostp = gethostbyname(in_coord_host);
-	if (NULL == hostp) {
-		fprintf(stderr, "Unable to resolve hostname!");
-		return -1;
-	}
-	memcpy(&si_coord.sin_addr, hostp->h_addr, sizeof(si_coord.sin_addr));
-
-	// create the sendable string
-	assert(in_command.length() <= BUFFER_SIZE - 1);
-
-	char command_str[BUFFER_SIZE];
-	memset(command_str, 0, BUFFER_SIZE);
-	strncpy(command_str, in_command.c_str(), in_command.length());
-	const size_t command_len = strlen(command_str);
-
-	#ifdef DEBUG
-	printf("DEBUG:  chat_client - sending |%s| to UDP coordinator\n", command_str);
-	#endif
-
-	// send the command
-	if (-1 == sendto(in_command_socket, command_str, command_len, 0, (struct sockaddr*)&si_coord, si_coord_len)) {
-		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-		return -1;
-	}
-
-	if (true == in_response) {
-		// receive the response
-		char receive_buffer[BUFFER_SIZE];
-		memset(receive_buffer, 0, BUFFER_SIZE);
-		const ssize_t recv_len = recvfrom(in_command_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&si_coord, &si_coord_len);
-
-		if (-1 == recv_len) {
-			fprintf(stderr, "Error during call to recvfrom().  Error is %s\n", strerror(errno));
-			return -1;
-		}
-		if (0 == recv_len) {
-			printf("recvfrom() encountered orderly shutdown");
-			return 0;
-		}
-
-		// prevent buffer overflow
-		assert(recv_len <= BUFFER_SIZE);
-		receive_buffer[recv_len] = 0;
-		receive_buffer[BUFFER_SIZE - 1] = 0;
-
-		#ifdef DEBUG
-		printf("DEBUG:  chat_client - received from UDP coordinator|%s|\n", receive_buffer);
-		#endif
-
-		// we are going to cheat here
-		// the chat coordinator only returns integer values
-		const int return_code = atoi(receive_buffer);
-
-		return return_code;
-	}
-	
 	return 0;
 }
 

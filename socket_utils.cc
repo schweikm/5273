@@ -18,23 +18,10 @@ int util_create_server_socket(const int in_socket_type, const int in_protocol, c
 		return -1;
 	}
 
-	// an Internet endpoint address
 	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;           // Internet Protocol
-	sin.sin_port=htons(in_port);
-
-	if (NULL == in_host) {
-		sin.sin_addr.s_addr = INADDR_ANY;   // use any available address
-	}
-	else {
-		// we were passed a hostname rather than IP address
-		struct hostent *hostp = gethostbyname(in_host);
-		if (NULL == hostp) {
-			fprintf(stderr, "Unable to resolve hostname!");
-			return -1;
-		}
-		memcpy(&sin.sin_addr, hostp->h_addr, sizeof(sin.sin_addr));
+	if(-1 == util_create_sockaddr(in_host, in_port, &sin)) {
+		fprintf(stderr, "Failed to create sockaddr_in.  Error is %s\n", strerror(errno));
+		return -1;
 	}
 
 	// bind the socket
@@ -55,23 +42,10 @@ int util_create_client_socket(const int in_socket_type, const int in_protocol, c
 		return -1;
 	}
 
-	// an Internet endpoint address
 	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;           // Internet Protocol
-	sin.sin_port=htons(in_port);
-
-	if (NULL == in_host) {
-		sin.sin_addr.s_addr = INADDR_ANY;   // use any available address
-	}
-	else {
-		// we were passed a hostname rather than IP address
-		struct hostent *hostp = gethostbyname(in_host);
-		if (NULL == hostp) {
-			fprintf(stderr, "Unable to resolve hostname!");
-			return -1;
-		}
-		memcpy(&sin.sin_addr, hostp->h_addr, sizeof(sin.sin_addr));
+	if(-1 == util_create_sockaddr(in_host, in_port, &sin)) {
+		fprintf(stderr, "Failed to create sockaddr_in.  Error is %s\n", strerror(errno));
+		return -1;
 	}
 
 	// connect to our endpoint
@@ -93,6 +67,28 @@ int util_listen(const int in_socket) {
 	return 0;
 }
 
+int util_create_sockaddr(const char* const in_host, const int in_port, struct sockaddr_in* in_sin) {
+	// an Internet endpoint address
+	memset(in_sin, 0, sizeof(*in_sin));
+	in_sin->sin_family = AF_INET;           // Internet Protocol
+	in_sin->sin_port=htons(in_port);
+
+	if (NULL == in_host) {
+		in_sin->sin_addr.s_addr = INADDR_ANY;   // use any available address
+	}
+	else {
+		// we were passed a hostname rather than IP address
+		struct hostent *hostp = gethostbyname(in_host);
+		if (NULL == hostp) {
+			fprintf(stderr, "Unable to resolve hostname!");
+			return -1;
+		}
+		memcpy(&in_sin->sin_addr, hostp->h_addr, sizeof(in_sin->sin_addr));
+	}
+
+	return 0;
+}
+
 
 //
 // TCP METHODS - SEND
@@ -100,33 +96,13 @@ int util_listen(const int in_socket) {
 
 
 int util_send_tcp(const int in_socket, const int in_int) {
-    #ifdef DEBUG
-    printf("DEBUG:  util (tcp) int - sending |%d|\n", in_int);
-    #endif
-
-	const int net_int = htonl(in_int);
-
-    // send the number
-    if (-1 == send(in_socket, &net_int, sizeof(net_int), 0)) {
-        fprintf(stderr, "util (tcp) int send called failed!  Error is %s\n", strerror(errno));
-		return -1;
-    }
-
-	return 0;
+	// same as UDP but with no sender!
+	return util_send_udp(in_socket, in_int, NULL, 0);
 }
 
 int util_send_tcp(const int in_socket, const char* const in_buf, const int in_buf_len) {
-    #ifdef DEBUG
-    printf("DEBUG:  util (tcp) str - sending |%s|\n", in_buf);
-    #endif
-
-    // send the string
-    if (-1 == send(in_socket, in_buf, in_buf_len, 0)) {
-        fprintf(stderr, "util (tcp) str send called failed!  Error is %s\n", strerror(errno));
-		return -1;
-    }
-
-	return 0;
+	// same as UDP but with no sender!
+	return util_send_udp(in_socket, in_buf, in_buf_len, NULL, 0);
 }
 
 
@@ -136,30 +112,82 @@ int util_send_tcp(const int in_socket, const char* const in_buf, const int in_bu
 
 
 int util_recv_tcp(const int in_socket, int& ret_int) {
+	// same as UDP but with no sender!
+	return util_recv_udp(in_socket, ret_int, NULL, 0);
+}
+
+int util_recv_tcp(const int in_socket, char* ret_buf, const int ret_buf_len) {
+	// same as UDP but with no sender!
+	return util_recv_udp(in_socket, ret_buf, ret_buf_len, NULL, 0);
+}
+
+
+//
+// UDP METHODS - SEND
+//
+
+
+int util_send_udp(const int in_socket, const int in_int, const struct sockaddr* in_to, const socklen_t in_to_len) {
+    #ifdef DEBUG
+    printf("DEBUG:  util (int) - sending |%d|\n", in_int);
+    #endif
+
+	const int net_int = htonl(in_int);
+
+    // send the number
+    if (-1 == sendto(in_socket, &net_int, sizeof(net_int), 0, in_to, in_to_len)) {
+        fprintf(stderr, "util (int) send called failed!  Error is %s\n", strerror(errno));
+		return -1;
+    }
+
+	return 0;
+}
+
+int util_send_udp(const int in_socket, const char* const in_buf, const int in_buf_len, const struct sockaddr* in_to, const socklen_t in_to_len) {
+    #ifdef DEBUG
+    printf("DEBUG:  util (str) - sending |%s|\n", in_buf);
+    #endif
+
+    // send the string
+    if (-1 == sendto(in_socket, in_buf, in_buf_len, 0, in_to, in_to_len)) {
+        fprintf(stderr, "util (str) send called failed!  Error is %s\n", strerror(errno));
+		return -1;
+    }
+
+	return 0;
+}
+
+
+//
+// UDP METHODS - RECV
+//
+
+
+int util_recv_udp(const int in_socket, int& ret_int, struct sockaddr *src_addr, socklen_t addrlen) {
 	int recv_int;
 
-	const int num_bytes = recv(in_socket, &recv_int, sizeof(recv_int), 0);
+	const int num_bytes = recvfrom(in_socket, &recv_int, sizeof(recv_int), 0, src_addr, &addrlen);
 	if (num_bytes <= 0) {
-		fprintf(stderr, "util (tcp) int - error or client disconnect: %s\n", strerror(errno));
+		fprintf(stderr, "util (int) - recvfrom error or client disconnect: %s\n", strerror(errno));
 		return -1;
 	}
 
 	ret_int = ntohl(recv_int);
 
 	#ifdef DEBUG
-	printf("DEBUG:  util (tcp) int - received |%d|\n", ret_int);
+	printf("DEBUG:  util (int) - received |%d|\n", ret_int);
 	#endif
 
 	return 0;
 }
 
-int util_recv_tcp(const int in_socket, char* ret_buf, const int ret_buf_len) {
+int util_recv_udp(const int in_socket, char* ret_buf, const int ret_buf_len, struct sockaddr *src_addr, socklen_t addrlen) {
 	// make sure our buffer is clean
 	memset(ret_buf, 0, ret_buf_len);
 
-	const int num_bytes = recv(in_socket, ret_buf, ret_buf_len, 0);
+	const int num_bytes = recvfrom(in_socket, ret_buf, ret_buf_len, 0, src_addr, &addrlen);
 	if (num_bytes <= 0) {
-		fprintf(stderr, "util (tcp) str - error or client disconnect: %s\n", strerror(errno));
+		fprintf(stderr, "util (str) - recvfrom error or client disconnect: %s\n", strerror(errno));
 		return -1;
 	}
 
@@ -172,74 +200,9 @@ int util_recv_tcp(const int in_socket, char* ret_buf, const int ret_buf_len) {
     ret_buf[num_bytes] = 0;
 
 	#ifdef DEBUG
-	printf("DEBUG:  util (tcp) str - received |%s|\n", ret_buf);
+	printf("DEBUG:  util (str) - received |%s|\n", ret_buf);
 	#endif
 
     return num_bytes;
 }
-
-
-//
-// UDP METHODS - SEND
-//
-
-
-//
-// UDP METHODS - RECV
-//
-
-
-/*
-int util_recv_udp(const int in_socket, long& ret_val) {
-	// create the sender info
-	struct sockaddr_in si_to;
-	socklen_t si_to_len = sizeof(si_to);
-	memset(&si_to, 0, si_to_len);
-	si_to.sin_family = AF_INET;
-	si_coord.sin_port = htons(in_coord_port);
-
-    // we may be passed a hostname rather than IP address
-    struct hostent *hostp = gethostbyname(in_coord_host);
-    if (NULL == hostp) {
-        fprintf(stderr, "Unable to resolve hostname!");
-        return -1;
-    }   
-    memcpy(&si_coord.sin_addr, hostp->h_addr, sizeof(si_coord.sin_addr));
-
-}
-
-int util_recv_udp(const int in_socket, char* ret_buf, const int ret_buf_len) {
-	return 0;
-}
-
-int util_recv_udp_impl(const int in_socket, char* in_recv_buf, const int in_recv_buf_len) {
-
-	memset(in_recv_buf, 0, in_recv_buf_len);
-	const ssize_t recv_len = recvfrom(in_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&si_coord, &si_coord_len);
-
-        if (-1 == recv_len) {
-            fprintf(stderr, "Error during call to recvfrom().  Error is %s\n", strerror(errno));
-            return -1; 
-        }
-        if (0 == recv_len) {
-            printf("recvfrom() encountered orderly shutdown");
-            return 0;
-        }
-
-        // prevent buffer overflow
-        assert(recv_len <= BUFFER_SIZE);
-        receive_buffer[recv_len] = 0;
-        receive_buffer[BUFFER_SIZE - 1] = 0;
-
-        #ifdef DEBUG
-        printf("DEBUG:  chat_client - received from UDP coordinator|%s|\n", receive_buffer);
-        #endif
-
-        // we are going to cheat here
-        // the chat coordinator only returns integer values
-        const int return_code = atoi(receive_buffer);
-
-        return return_code;
-}
-*/
 

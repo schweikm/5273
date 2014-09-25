@@ -40,7 +40,6 @@ void do_submit(const string&, vector<string>&);
 void do_get_next(const int, map<int, int>&, const vector<string>&);
 void do_get_all(const int, map<int, int>&, const vector<string>&);
 int send_chat_messages(const int, const vector<string>&, const unsigned int, const unsigned int);
-void send_coord_term(const int, const string&);
 
 
 /*
@@ -88,9 +87,24 @@ int main(const int, const char* const argv[]) {
 			printf("Chat server closing after select timeout!\n");
 
 			// tell the coordinator that we are exiting
-			send_coord_term(coordinator_port, session_name);
+		    // create new UDP socket
+		    const int udp_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0); 
+			const string term_command = CMD_COORD_TERM + " " + session_name;
 
-			// clean up and exit
+		    // communicate over UDP
+		    struct sockaddr_in coord_addr;
+		    memset((char *)&coord_addr, 0, sizeof(coord_addr));
+		    coord_addr.sin_family = AF_INET;
+		    coord_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		    coord_addr.sin_port = htons(coordinator_port);
+		    socklen_t coord_addr_len = sizeof(coord_addr);
+
+	    	if (-1 == util_send_udp(udp_socket, term_command.c_str(), term_command.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
+		        fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+		    }   
+
+		    // clean up and exit
+	    	close(udp_socket);
 			close(server_socket);
 			exit(0);
 		}
@@ -270,34 +284,5 @@ int send_chat_messages(const int in_client_socket, const vector<string>& in_all_
 	}
 
 	return 0;
-}
-
-void send_coord_term(const int in_coordinator_port, const string& in_session_name) {
-	// create new UDP socket
-	const int udp_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0);
-
-	char term_str[BUFFER_SIZE];
-	memset(term_str, 0, BUFFER_SIZE);
-	sprintf(term_str, "%s %s", CMD_COORD_TERM.c_str(), in_session_name.c_str());
-	const size_t term_len = strlen(term_str);
-
-	// communicate over UDP
-	struct sockaddr_in coord_addr;
-	memset((char *)&coord_addr, 0, sizeof(coord_addr));
-	coord_addr.sin_family = AF_INET;
-	coord_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	coord_addr.sin_port = htons(in_coordinator_port);
-	socklen_t coord_addr_len = sizeof(coord_addr);
-
-	#ifdef DEBUG
-	printf("DEBUG:  chat_server - sending |%s|\n", term_str);
-	#endif
-
-	if (-1 == sendto(udp_socket, term_str, term_len, 0, (struct sockaddr *)&coord_addr, coord_addr_len)) {
-		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-	}  
-
-	// clean up and exit
-	close(udp_socket);
 }
 

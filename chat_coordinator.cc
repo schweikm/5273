@@ -22,7 +22,6 @@ using std::string;
 
 
 /* constants */
-const int QUEUE_LENGTH = 32;
 const int MAX_SESSION_NAME_SIZE = 8;
 
 const string CMD_START = "Start";
@@ -37,7 +36,6 @@ int get_port_number(const int);
 int do_start(const string&, map<string, int>&, const int);
 int do_find(const string&, const map<string, int>&);
 void do_terminate(const string&, map<string, int>&);
-void send_udp_code(const int, const int, const struct sockaddr*, const socklen_t*);
 
 
 /*
@@ -67,9 +65,9 @@ int main() {
 		memset(&remote_addr, 0, sizeof(remote_addr));
 
 		// receive data on the socket
-		const ssize_t recv_len = recvfrom(coordinator_socket, receive_buffer, BUFFER_SIZE, 0, (struct sockaddr *)&remote_addr, &remote_addr_len);
+		const int recv_len = util_recv_udp(coordinator_socket, receive_buffer, BUFFER_SIZE - 1, (struct sockaddr *)&remote_addr, remote_addr_len);
 		if (-1 == recv_len) {
-			fprintf(stderr, "Error during call to recvfrom().  Error is %s\n", strerror(errno));
+			fprintf(stderr, "Error reading socket.  Error is %s\n", strerror(errno));
 		}
 		else if (0 == recv_len) {
 			printf("recvfrom() encountered orderly shutdown");
@@ -96,7 +94,7 @@ int main() {
 			const size_t first_space = message.find_first_of(" ");
 			if (string::npos == first_space) {
 				fprintf(stderr, "Failed to find space in message.  Ignoring command.\n");
-				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
 				continue;
 			}
 
@@ -106,13 +104,13 @@ int main() {
 			// ensure we have valid strings
 			if (0 == command.size()) {
 				fprintf(stderr, "Parsed command has zero length.  Ignoring command.\n");
-				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
 				continue;
 			}
 
 			if (0 == arguments.size()) {
 				fprintf(stderr, "Parsed command arguments have zero length.  Ignoring command.\n");
-				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
 				continue;
 			}
 
@@ -126,18 +124,18 @@ int main() {
 			// perform the requested operation
 			if (CMD_START == command) {
 				const int code = do_start(session_name, chat_session_map, server_port);
-				send_udp_code(coordinator_socket, code, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
 			}
 			else if (CMD_FIND == command) {
 				const int code = do_find(session_name, chat_session_map);
-				send_udp_code(coordinator_socket, code, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
 			}
 			else if (CMD_TERMINATE == command) {
 				do_terminate(session_name, chat_session_map);
 			}
 			else {
 				fprintf(stderr, "Chat Coordinator - unrecognized command:  ->%s<-\n", command.c_str());
-				send_udp_code(coordinator_socket, -1, (struct sockaddr *)&remote_addr, &remote_addr_len);
+				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
 			}
 		}
 	}
@@ -174,7 +172,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 		const int session_port = get_port_number(session_socket);
 
 		// start the socket listening for connections
-		if (listen(session_socket, QUEUE_LENGTH) < 0) {
+		if (-1 == util_listen(session_socket)) {
 			fprintf(stderr, "Failed to listen on socket.  Error is %s\n", strerror(errno));
 		}
 
@@ -241,21 +239,5 @@ int do_find(const string& in_session_name, const map<string, int>& in_chat_sessi
  */
 void do_terminate(const string& in_session_name, map<string, int>& in_chat_session_map) {
 	in_chat_session_map.erase(in_session_name);
-}
-
-void send_udp_code(const int in_socket, const int in_code, const struct sockaddr* in_to, const socklen_t* in_tolen) {
-	char ret_str[BUFFER_SIZE];
-	memset(ret_str, 0, BUFFER_SIZE);
-	sprintf(ret_str, "%d", in_code);
-	const size_t ret_len = strlen(ret_str);
-
-	#ifdef DEBUG
-	printf("DEBUG:  chat_coordinator - sending UDP message |%s|\n", ret_str);
-	#endif
-
-	// send the code
-	if (-1 == sendto(in_socket, ret_str, ret_len, 0, in_to, *in_tolen)) {
-		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-	}
 }
 
