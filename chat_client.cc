@@ -12,6 +12,8 @@
 
 #include <iostream>
 
+#include "socket_utils.h"
+
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -23,7 +25,6 @@ using std::endl;
 using std::string;
 
 /* constants */
-const int BUFFER_SIZE = 4096;
 const int MAX_MESSAGE_LENGTH = 80;
 const int MAX_SESSION_NAME = 8;
 
@@ -41,11 +42,7 @@ const string CMD_COORD_FIND = "Find";
 const string CMD_COORD_LEAVE = "Leave";
 
 /* function declarations */
-int create_command_socket();
 int send_udp_command(const int, const char* const, const int, const string&, const bool);
-int create_tcp_socket(const char* const, const int);
-int send_tcp_command(const int, const string&);
-int receive_tcp(const int, char*, const int);
 int print_session_message(const int);
 
 
@@ -63,7 +60,7 @@ int main(const int argc, const char** const argv) {
 	const int coordinator_port = atoi(argv[2]);
 
 	// this is the socket that we will send commands to the chat coordinator
-	const int command_socket = create_command_socket();
+	const int command_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, coordinator_host, 0);
 	if (-1 == command_socket) {
 		fprintf(stderr, "Failed to create UDP socket to communicate with Chat Coordinator!\n");
 		return -1;
@@ -105,7 +102,7 @@ int main(const int argc, const char** const argv) {
 			// send the command to the chat coordinator
 			const int recv_val = send_udp_command(command_socket, coordinator_host, coordinator_port, CMD_START + " " + session_name, true);
 			if (-1 != recv_val) {
-				const int new_socket = create_tcp_socket(coordinator_host, recv_val);
+				const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, recv_val);
 				if (-1 != new_socket) {
 					printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
 					active_session_name = session_name;
@@ -132,7 +129,7 @@ int main(const int argc, const char** const argv) {
 				}
 
 				// join the new session
-				const int new_socket = create_tcp_socket(coordinator_host, recv_val);
+				const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, recv_val);
 				if (-1 != new_socket) {
 					printf("You have joined the chat session \"%s\"\n", session_name.c_str());
 					active_session_name = session_name;
@@ -156,13 +153,14 @@ int main(const int argc, const char** const argv) {
 			}
 
 			// send the message over TCP
-			if (0 != send_tcp_command(active_session_socket, CMD_SUBMIT + " " + user_message)) {
+			const string command = CMD_SUBMIT + " " + user_message;
+			if (0 != util_send_tcp(active_session_socket, command.c_str(), command.length())) {
 				fprintf(stderr, "Failed to submit message\n");
 			}
 		}
 		else if (CMD_GET_NEXT == user_command) {
 			// send the coomand
-			if (-1 == send_tcp_command(active_session_socket, CMD_GET_NEXT)) {
+			if (0 != util_send_tcp(active_session_socket, CMD_GET_NEXT.c_str(), CMD_GET_NEXT.length())) {
 				fprintf(stderr, "Failure during get_next\n");
 			}
 			else {
@@ -171,18 +169,22 @@ int main(const int argc, const char** const argv) {
 		}
 		else if (CMD_GET_ALL == user_command) {
 			// send the coomand
-			if (-1 == send_tcp_command(active_session_socket, CMD_GET_ALL)) {
+			if (0 != util_send_tcp(active_session_socket, CMD_GET_ALL.c_str(), CMD_GET_ALL.length())) {
 				fprintf(stderr, "Failure during get_all\n");
 			}
 			else {
-				char num_buf[BUFFER_SIZE];
-				if(-1 == receive_tcp(active_session_socket, num_buf, BUFFER_SIZE)) {
+				int num_msgs;
+				if (-1 == util_recv_tcp(active_session_socket, num_msgs)) {
 					fprintf(stderr, "Failed to receive number of messages\n");
 				}
 				else {
-					const int num_messages = atoi(num_buf);
-					for (int i = 0; i < num_messages; i++) {
-						print_session_message(active_session_socket);
+					if (-1 == num_msgs) {
+						printf("No new message in the chat session\n");
+					}
+					else {
+						for (int i = 0; i < num_msgs; i++) {
+							print_session_message(active_session_socket);
+						}
 					}
 				}
 			}
@@ -206,26 +208,6 @@ int main(const int argc, const char** const argv) {
 
 	close(command_socket);
 	return 0;
-}
-
-int create_command_socket() {
-	// create new UDP socket
-	const int command_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); 
-
-	// command address
-	struct sockaddr_in si_command;
-	memset(&si_command, 0, sizeof(si_command));
-	si_command.sin_family = AF_INET;
-	si_command.sin_port = htons(0);
-	si_command.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	// bind socket to port
-	if (-1 == bind(command_socket, (struct sockaddr*)&si_command, sizeof(si_command) )) {
-		fprintf(stderr, "Failed to bind command socket.  Error is %s\n", strerror(errno));
-		return -1;
-	}
-
-	return command_socket;
 }
 
 int send_udp_command(const int in_command_socket, const char* const in_coord_host, const int in_coord_port, const string& in_command, const bool in_response) {
@@ -296,95 +278,29 @@ int send_udp_command(const int in_command_socket, const char* const in_coord_hos
 	return 0;
 }
 
-int create_tcp_socket(const char* const in_coord_host, const int in_tcp_port) {
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_port=htons(in_tcp_port);
-
-	// we may be passed a hostname rather than IP address
-	struct hostent *hostp = gethostbyname(in_coord_host);
-	if (NULL == hostp) {
-		fprintf(stderr, "Unable to resolve hostname!");
-		return -1;
-	}
-	memcpy(&sin.sin_addr, hostp->h_addr, sizeof(sin.sin_addr));
-
-	const int tcp_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (tcp_socket < 0) {
-		fprintf(stderr, "Failed to create socket\n");
-		return -1;
-	}
-
-	if (connect(tcp_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-		fprintf(stderr, "failed to connect socket %s\n", strerror(errno));
-        return -1;
-	}
-
-	return tcp_socket;
-}
-
-int send_tcp_command(const int in_socket, const string& in_command) {
-    #ifdef DEBUG
-    printf("DEBUG:  chat_server - sending |%s|\n", in_command.c_str());
-    #endif
-
-	if (-1 == in_socket) {
-		fprintf(stderr, "Invalid socket passed as argument!\n");
-		return -1;
-	}
-
-    // send the code
-    if (-1 == send(in_socket, in_command.c_str(), in_command.length(), 0)) {
-        fprintf(stderr, "send called failed!  Error is %s\n", strerror(errno));
-    } 
-
-	return 0;
-}
-
-int receive_tcp(const int in_socket, char* in_recv_buffer, const int in_recv_buffer_len) {
-	// receive the response
-	memset(in_recv_buffer, 0, in_recv_buffer_len);
-
-	const int num_bytes = recv(in_socket, in_recv_buffer, in_recv_buffer_len, 0); 
-	if (num_bytes <= 0) {
-		fprintf(stderr, "error or client disconnect: %s\n", strerror(errno));
-		return -1;
-	}
-
-	// prevent buffer overflow
-	assert(num_bytes <= in_recv_buffer_len);
-	in_recv_buffer[num_bytes] = 0;
-	in_recv_buffer[in_recv_buffer_len - 1] = 0;
-
-    #ifdef DEBUG
-    printf("DEBUG:  chat_server - received |%s|\n", in_recv_buffer);
-    #endif
-
-	return 0;
-}
-
 int print_session_message(const int in_socket) {
-	// and get the response
+	// get the message length first
+	int msg_len;
+	if(-1 == util_recv_tcp(in_socket, msg_len)) {
+		fprintf(stderr, "Failed to get message length.  Error is %s\n", strerror(errno));
+		return -1;
+	}
+	
+	// if we literally recv'd -1 from the socket then there is no message
+	if (-1 == msg_len) {
+		printf("No new message in the chat session\n");
+		return 0;
+	}
+
+	// then the response
 	char recv_buffer[BUFFER_SIZE];
 
-	if (-1 == receive_tcp(in_socket, recv_buffer, BUFFER_SIZE)) {
-		fprintf(stderr, "Failure in TCP recv.  Error is %s\n", strerror(errno));
+	if (-1 == util_recv_tcp(in_socket, recv_buffer, msg_len)) {
+		fprintf(stderr, "Failed to get message.  Error is %s\n", strerror(errno));
 		return -1;
 	}
-	else {
-		// parse the response
-		string message(recv_buffer);
-		if ("-1" == message) {
-			printf("No new message in the chat session\n");
-		}
-		else {
-			// since we are using C++ strings, we don't care about the first length parameter
-			message = message.substr(message.find_first_of(" ") + 1);
-			printf("%s\n", message.c_str());
-		}
-	}
 
+	printf("%s\n", recv_buffer);
 	return 0;
 }
 

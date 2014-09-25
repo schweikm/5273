@@ -12,6 +12,8 @@
 #include <string>
 #include <unistd.h>
 
+#include "socket_utils.h"
+
 #include <netinet/in.h>
 #include <sys/socket.h>
 
@@ -21,7 +23,6 @@ using std::string;
 
 /* constants */
 const int QUEUE_LENGTH = 32;
-const int BUFFER_SIZE = 4096;
 const int MAX_SESSION_NAME_SIZE = 8;
 
 const string CMD_START = "Start";
@@ -32,7 +33,6 @@ const string SERVER_EXE = "chat_server.exe";
 
 
 /* function declarations */
-int create_socket(const int, const int);
 int get_port_number(const int);
 int do_start(const string&, map<string, int>&, const int);
 int do_find(const string&, const map<string, int>&);
@@ -48,7 +48,7 @@ int main() {
 	map<string, int> chat_session_map;
 
 	// create the server socket
-	const int coordinator_socket = create_socket(SOCK_DGRAM, IPPROTO_UDP);
+	const int coordinator_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0);
 
 	// print the UDP port number
 	const int server_port = get_port_number(coordinator_socket);
@@ -147,34 +147,6 @@ int main() {
 }
 
 /*
- * create_socket
- */
-int create_socket(const int in_socket_type, const int in_protocol)
-{
-	// allocate a socket
-	const int new_socket = socket(PF_INET, in_socket_type, in_protocol);
-	if (new_socket < 0) {
-		fprintf(stderr, "Unable to create socket.  Error is %s\n", strerror(errno));
-		exit (1);
-	}
-
-	// an Internet endpoint address
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;			// Internet Protocol
-	sin.sin_addr.s_addr = INADDR_ANY;	// use any available address
-	sin.sin_port=htons(0);				// request a port number to be allocated by bind
-
-	// bind the socket
-	if (bind(new_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-		fprintf(stderr, "Unable to bind to port.  Error is %s\n", strerror(errno));
-		exit(2);
-	}
-
-	return new_socket;
-}
-
-/*
  * get_port_number
  */
 int get_port_number(const int in_socket) {
@@ -198,7 +170,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 	int return_code = 0;
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
-		const int session_socket = create_socket(SOCK_STREAM, IPPROTO_TCP);
+		const int session_socket = util_create_server_socket(SOCK_STREAM, IPPROTO_TCP, NULL, 0);
 		const int session_port = get_port_number(session_socket);
 
 		// start the socket listening for connections
