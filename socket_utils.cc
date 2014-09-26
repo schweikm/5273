@@ -89,6 +89,20 @@ int util_create_sockaddr(const char* const in_host, const int in_port, struct so
 	return 0;
 }
 
+int util_get_port_number(const int in_socket) {
+    struct sockaddr_in sin;
+    socklen_t socklen = sizeof(sin);
+    memset(&sin, 0, sizeof(sin));
+
+    if (getsockname(in_socket, (struct sockaddr *)&sin, &socklen) < 0) {
+        fprintf(stderr, "getsockname called failed!  Error is %s\n", strerror(errno));
+        return -1;
+    }   
+
+    return ntohs(sin.sin_port);
+}
+
+
 
 //
 // TCP METHODS - SEND

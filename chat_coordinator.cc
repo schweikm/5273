@@ -12,11 +12,11 @@
 #include <string>
 #include <unistd.h>
 
-#include "strings.h"
-#include "socket_utils.h"
-
 #include <netinet/in.h>
 #include <sys/socket.h>
+
+#include "strings.h"
+#include "socket_utils.h"
 
 using std::map;
 using std::string;
@@ -28,7 +28,6 @@ const string SERVER_EXE = "chat_server.exe";
 
 
 /* function declarations */
-int get_port_number(const int);
 int do_start(const string&, map<string, int>&, const int);
 int do_find(const string&, const map<string, int>&);
 void do_terminate(const string&, map<string, int>&);
@@ -45,7 +44,7 @@ int main() {
 	const int coordinator_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0);
 
 	// print the UDP port number
-	const int server_port = get_port_number(coordinator_socket);
+	const int server_port = util_get_port_number(coordinator_socket);
 	printf("Chat Coordinator started on UDP port %d\n", server_port);
 
 	//
@@ -97,22 +96,6 @@ int main() {
 	return 0;
 }
 
-/*
- * get_port_number
- */
-int get_port_number(const int in_socket) {
-	struct sockaddr_in sin;
-	socklen_t socklen = sizeof(sin);
-	memset(&sin, 0, sizeof(sin));
-
-	if (getsockname(in_socket, (struct sockaddr *)&sin, &socklen) < 0) {
-		fprintf(stderr, "getsockname called failed!  Error is %s\n", strerror(errno));
-		exit(3);
-	}
-
-	return ntohs(sin.sin_port);
-}
-
 
 /*
  * do_start
@@ -122,7 +105,7 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
 		const int session_socket = util_create_server_socket(SOCK_STREAM, IPPROTO_TCP, NULL, 0);
-		const int session_port = get_port_number(session_socket);
+		const int session_port = util_get_port_number(session_socket);
 
 		// start the socket listening for connections
 		if (-1 == util_listen(session_socket)) {

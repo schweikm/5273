@@ -12,6 +12,7 @@ int util_create_server_socket(const int in_socket_type, const int in_protocol, c
 int util_create_client_socket(const int in_socket_type, const int in_protocol, const char* const in_host, const int in_port);
 int util_listen(const int in_socket);
 int util_create_sockaddr(const char* const in_host, const int in_port, struct sockaddr_in* in_sin);
+int util_get_port_number(const int in_socket);
 
 int util_send_tcp(const int in_socket, const int in_int);
 int util_send_tcp(const int in_socket, const char* const in_buf, const int in_buf_len);

@@ -9,28 +9,30 @@
 #include <cstring>
 #include <ctime>
 #include <map>
-#include <vector>
 #include <string>
 #include <unistd.h>
-
-#include "strings.h"
-#include "socket_utils.h"
+#include <vector>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "strings.h"
+#include "socket_utils.h"
+
 using std::map;
 using std::string;
 using std::vector;
+
 
 /* constants */
 const int MESSAGE_MAX_LENGTH = 80;
 const int RECEIVE_TIMEOUT = 60;  // seconds
 
 /* function declarations */
-void do_submit(const string&, vector<string>&);
-void do_get_next(const int, map<int, int>&, const vector<string>&);
-void do_get_all(const int, map<int, int>&, const vector<string>&);
+void handle_select_timeout(const int, const char* const, const int, const string&);
+int do_submit(const int, vector<string>&);
+int do_get_next(const int, map<int, int>&, const vector<string>&);
+int do_get_all(const int, map<int, int>&, const vector<string>&);
 int send_chat_messages(const int, const vector<string>&, const unsigned int, const unsigned int);
 
 
@@ -76,34 +78,7 @@ int main(const int, const char* const argv[]) {
 
 		// timeout
 		if (0 == select_code) {
-			printf("Chat server closing after select timeout!\n");
-
-			// tell the coordinator that we are exiting
-		    // create new UDP socket
-		    const int udp_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0); 
-
-		    // communicate over UDP
-		    struct sockaddr_in coord_addr;
-		    memset((char *)&coord_addr, 0, sizeof(coord_addr));
-		    coord_addr.sin_family = AF_INET;
-		    coord_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-		    coord_addr.sin_port = htons(coordinator_port);
-		    socklen_t coord_addr_len = sizeof(coord_addr);
-
-	    	if (-1 == util_send_udp(udp_socket, CMD_COORDINATOR_TERMINATE.c_str(), CMD_COORDINATOR_TERMINATE.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
-		        fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-		    } 
-			else {
-	    		if (-1 == util_send_udp(udp_socket, session_name.c_str(), session_name.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
-		        	fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-			    }
-				else {
-				    // clean up and exit
-			    	close(udp_socket);
-					close(server_socket);
-					exit(0);
-				}
-			}
+			handle_select_timeout(server_socket, NULL, coordinator_port, session_name);
 		}
 
 		if (FD_ISSET(server_socket, &rfds)) {
@@ -167,26 +142,19 @@ int main(const int, const char* const argv[]) {
 
 				// perform the requested operation
 				if (CMD_SERVER_SUBMIT == command) {
-					int msg_len;
-					if (-1 == util_recv_tcp(client_socket, msg_len)) {
-						fprintf(stderr, "Failed to receive message length.  Error is %s\n", strerror(errno));
-					}
-					else {
-						char msg_buf[BUFFER_SIZE + 1];
-						if (-1 == util_recv_tcp(client_socket, msg_buf, BUFFER_SIZE)) {
-							fprintf(stderr, "Failed to receive message.  Error is %s\n", strerror(errno));
-						}
-						else {
-							const string msg(msg_buf);
-							do_submit(msg, all_messages);
-						}
+					if (-1 == do_submit(client_socket, all_messages)) {
+						fprintf(stderr, "do_submit failed!\n");
 					}
 				}
 				else if (CMD_SERVER_GET_NEXT == command) {
-					do_get_next(client_socket, next_message_map, all_messages);
+					if (-1 == do_get_next(client_socket, next_message_map, all_messages)) {
+						fprintf(stderr, "do_get_next failed!\n");
+					}
 				}
 				else if (CMD_SERVER_GET_ALL == command) {
-					do_get_all(client_socket, next_message_map, all_messages);
+					if (-1 == do_get_all(client_socket, next_message_map, all_messages)) {
+						fprintf(stderr, "do_get_all failed!\n");
+					}
 				}
 				else if (CMD_SERVER_LEAVE == command) {
 					close(client_socket);
@@ -203,31 +171,76 @@ int main(const int, const char* const argv[]) {
 	return 0;
 }
 
+void handle_select_timeout(const int in_server_socket, const char* const in_coord_host, const int in_coord_port, const string& in_session_name) {
+	printf("Chat server closing after select timeout!\n");
+
+	// tell the coordinator that we are exiting
+	// create new UDP socket
+	const int udp_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0); 
+
+	// communicate over UDP
+	struct sockaddr_in coord_addr;
+	if (-1 == util_create_sockaddr(in_coord_host, in_coord_port, &coord_addr)) {
+		fprintf(stderr, "Failed to create coordinator sockaddr.  Error is %s\n", strerror(errno));
+		exit(-1);
+	}
+
+	if (-1 == util_send_udp(udp_socket, CMD_COORDINATOR_TERMINATE.c_str(), CMD_COORDINATOR_TERMINATE.length(), (struct sockaddr *)&coord_addr, sizeof(coord_addr))) {
+		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+		exit(-1);
+	}
+
+	if (-1 == util_send_udp(udp_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr *)&coord_addr, sizeof(coord_addr))) {
+		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+		exit(-1);
+	}
+
+	// clean up and exit
+	close(udp_socket);
+	close(in_server_socket);
+	exit(0);
+}
+
+
 /*
  * do_submit
  */
-void do_submit(const string& in_message, vector<string>& in_all_messages) {
+int do_submit(const int in_socket, vector<string>& in_all_messages) {
+	int msg_len;
+	if (-1 == util_recv_tcp(in_socket, msg_len)) {
+		fprintf(stderr, "Failed to receive message length.  Error is %s\n", strerror(errno));
+		return -1;
+	}
+
+	char msg_buf[BUFFER_SIZE + 1];
+	if (-1 == util_recv_tcp(in_socket, msg_buf, BUFFER_SIZE)) {
+		fprintf(stderr, "Failed to receive message.  Error is %s\n", strerror(errno));
+		return -1;
+	}
+
 	// we only support 80 character messages
-	string message_text = in_message;
+	string message_text(msg_buf);
 	if (message_text.length() > MESSAGE_MAX_LENGTH) {
 		fprintf(stderr, "Message is greater than %d characters - truncating.\n", MESSAGE_MAX_LENGTH);
 		message_text = message_text.substr(0, MESSAGE_MAX_LENGTH);
 	}
 
 	// store the message in the chat history
-	in_all_messages.push_back(in_message);
+	in_all_messages.push_back(message_text);
+
+	return 0;
 }
 
 /*
  * do_get_next
  */
-void do_get_next(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
+int do_get_next(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
 	// let's make sure that the next message exists
 	map<int, int>::const_iterator next_it = in_next_message.find(in_client_socket);
 	if (in_next_message.end() == next_it) {
 		fprintf(stderr, "failed to find last message index for client %d\n", in_client_socket);
 		util_send_tcp(in_client_socket, -1);
-		return;
+		return -1;
 	}
 
 	const int start_index = next_it->second;
@@ -239,18 +252,20 @@ void do_get_next(const int in_client_socket, map<int, int>& in_next_message, con
 	else {
 		util_send_tcp(in_client_socket, -1);
 	}
+
+	return 0;
 }
 
 /*
  * do_get_all
  */
-void do_get_all(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
+int do_get_all(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
 	// let's make sure that the next message exists
 	map<int, int>::const_iterator next_it = in_next_message.find(in_client_socket);
 	if (in_next_message.end() == next_it) {
 		fprintf(stderr, "failed to find last message index for client %d\n", in_client_socket);
 		util_send_tcp(in_client_socket, -1);
-		return;
+		return -1;
 	}
 
 	const int start_index = next_it->second;
@@ -263,15 +278,17 @@ void do_get_all(const int in_client_socket, map<int, int>& in_next_message, cons
 	if (0 == num_msgs) {
 		if (-1 == util_send_tcp(in_client_socket, -1)) {
 			fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
-			return;
+			return -1;
 		}
-		return;
+
+		// nothing more to do
+		return 0;
 	}
 
 	// have n messages
 	if (-1 == util_send_tcp(in_client_socket, num_msgs)) {
 		fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
-		return;
+		return -1;
 	}
 
 	// then send the messages
@@ -282,6 +299,8 @@ void do_get_all(const int in_client_socket, map<int, int>& in_next_message, cons
 	else {
 		util_send_tcp(in_client_socket, -1);
 	}
+
+	return 0;
 }
 
 /*
