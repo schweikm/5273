@@ -111,14 +111,14 @@ int util_send_tcp(const int in_socket, const char* const in_buf, const int in_bu
 //
 
 
-int util_recv_tcp(const int in_socket, int& ret_int) {
+int util_recv_tcp(const int in_socket, int& ret_int, const int in_flags) {
 	// same as UDP but with no sender!
-	return util_recv_udp(in_socket, ret_int, NULL, 0);
+	return util_recv_udp(in_socket, ret_int, NULL, 0, in_flags);
 }
 
-int util_recv_tcp(const int in_socket, char* ret_buf, const int ret_buf_len) {
+int util_recv_tcp(const int in_socket, char* ret_buf, const int ret_buf_len, const int in_flags) {
 	// same as UDP but with no sender!
-	return util_recv_udp(in_socket, ret_buf, ret_buf_len, NULL, 0);
+	return util_recv_udp(in_socket, ret_buf, ret_buf_len, NULL, 0, in_flags);
 }
 
 
@@ -163,10 +163,11 @@ int util_send_udp(const int in_socket, const char* const in_buf, const int in_bu
 //
 
 
-int util_recv_udp(const int in_socket, int& ret_int, struct sockaddr *src_addr, socklen_t addrlen) {
+int util_recv_udp(const int in_socket, int& ret_int, struct sockaddr *src_addr, socklen_t addrlen, const int in_flags) {
+	memset(src_addr, 0, addrlen);
 	int recv_int;
 
-	const int num_bytes = recvfrom(in_socket, &recv_int, sizeof(recv_int), 0, src_addr, &addrlen);
+	const int num_bytes = recvfrom(in_socket, &recv_int, sizeof(recv_int), in_flags, src_addr, &addrlen);
 	if (num_bytes <= 0) {
 		fprintf(stderr, "util (int) - recvfrom error or client disconnect: %s\n", strerror(errno));
 		return -1;
@@ -181,11 +182,12 @@ int util_recv_udp(const int in_socket, int& ret_int, struct sockaddr *src_addr, 
 	return 0;
 }
 
-int util_recv_udp(const int in_socket, char* ret_buf, const int ret_buf_len, struct sockaddr *src_addr, socklen_t addrlen) {
+int util_recv_udp(const int in_socket, char* ret_buf, const int ret_buf_len, struct sockaddr *src_addr, socklen_t addrlen, const int in_flags) {
 	// make sure our buffer is clean
 	memset(ret_buf, 0, ret_buf_len);
+	memset(src_addr, 0, addrlen);
 
-	const int num_bytes = recvfrom(in_socket, ret_buf, ret_buf_len, 0, src_addr, &addrlen);
+	const int num_bytes = recvfrom(in_socket, ret_buf, ret_buf_len, in_flags, src_addr, &addrlen);
 	if (num_bytes <= 0) {
 		fprintf(stderr, "util (str) - recvfrom error or client disconnect: %s\n", strerror(errno));
 		return -1;

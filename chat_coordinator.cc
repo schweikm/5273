@@ -12,6 +12,7 @@
 #include <string>
 #include <unistd.h>
 
+#include "strings.h"
 #include "socket_utils.h"
 
 #include <netinet/in.h>
@@ -23,11 +24,6 @@ using std::string;
 
 /* constants */
 const int MAX_SESSION_NAME_SIZE = 8;
-
-const string CMD_START = "Start";
-const string CMD_FIND = "Find";
-const string CMD_TERMINATE = "Terminate";
-
 const string SERVER_EXE = "chat_server.exe";
 
 
@@ -60,83 +56,40 @@ int main() {
 	socklen_t remote_addr_len = sizeof(remote_addr);
 
 	for (;;) {
-		// zero out data
-		memset(receive_buffer, 0, BUFFER_SIZE);
-		memset(&remote_addr, 0, sizeof(remote_addr));
-
-		// receive data on the socket
-		const int recv_len = util_recv_udp(coordinator_socket, receive_buffer, BUFFER_SIZE - 1, (struct sockaddr *)&remote_addr, remote_addr_len);
-		if (-1 == recv_len) {
+		// receive the message with our command
+		if(-1 == util_recv_udp(coordinator_socket, receive_buffer, BUFFER_SIZE - 1, (struct sockaddr *)&remote_addr, remote_addr_len)) {
 			fprintf(stderr, "Error reading socket.  Error is %s\n", strerror(errno));
 		}
-		else if (0 == recv_len) {
-			printf("recvfrom() encountered orderly shutdown");
-			break;
+		const string command(receive_buffer);
+
+		// receive the chat seesion name
+		if(-1 == util_recv_udp(coordinator_socket, receive_buffer, BUFFER_SIZE - 1, (struct sockaddr *)&remote_addr, remote_addr_len)) {
+			fprintf(stderr, "Error reading socket.  Error is %s\n", strerror(errno));
+		}
+		const string arguments(receive_buffer);
+
+		// we only support 8 character names
+		string session_name = arguments;
+		if (arguments.length() > MAX_SESSION_NAME_SIZE) {
+			fprintf(stderr, "Chat session name is greater than %d characters - truncating.\n", MAX_SESSION_NAME_SIZE);
+			session_name = arguments.substr(0, MAX_SESSION_NAME_SIZE);
+		}
+
+		// perform the requested operation
+		if (CMD_COORDINATOR_START == command) {
+			const int code = do_start(session_name, chat_session_map, server_port);
+			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
+		}
+		else if (CMD_COORDINATOR_FIND == command) {
+			const int code = do_find(session_name, chat_session_map);
+			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
+		}
+		else if (CMD_COORDINATOR_TERMINATE == command) {
+			do_terminate(session_name, chat_session_map);
 		}
 		else {
-			// prevent buffer overflow
-			assert(recv_len <= BUFFER_SIZE);
-			receive_buffer[recv_len] = 0;
-			receive_buffer[BUFFER_SIZE - 1] = 0;
-
-			#ifdef DEBUG
-			printf("DEBUG:  chat_coordinator - received |%s|\n", receive_buffer);
-			#endif
-
-			// parse message
-			string message(receive_buffer);
-			if (0 == message.length()) {
-				fprintf(stderr, "Chat Coordinator - received NULL command\n");
-				continue;
-			}
-
-			// begin parsing string
-			const size_t first_space = message.find_first_of(" ");
-			if (string::npos == first_space) {
-				fprintf(stderr, "Failed to find space in message.  Ignoring command.\n");
-				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
-				continue;
-			}
-
-			const string command = message.substr(0, first_space);
-			const string arguments = message.substr(first_space + 1);
-
-			// ensure we have valid strings
-			if (0 == command.size()) {
-				fprintf(stderr, "Parsed command has zero length.  Ignoring command.\n");
-				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
-				continue;
-			}
-
-			if (0 == arguments.size()) {
-				fprintf(stderr, "Parsed command arguments have zero length.  Ignoring command.\n");
-				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
-				continue;
-			}
-
-			// we only support 8 character names
-			string session_name = arguments;
-			if (arguments.length() > MAX_SESSION_NAME_SIZE) {
-				fprintf(stderr, "Chat session name is greater than %d characters - truncating.\n", MAX_SESSION_NAME_SIZE);
-				session_name = arguments.substr(0, MAX_SESSION_NAME_SIZE);
-			}
-
-			// perform the requested operation
-			if (CMD_START == command) {
-				const int code = do_start(session_name, chat_session_map, server_port);
-				util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
-			}
-			else if (CMD_FIND == command) {
-				const int code = do_find(session_name, chat_session_map);
-				util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
-			}
-			else if (CMD_TERMINATE == command) {
-				do_terminate(session_name, chat_session_map);
-			}
-			else {
-				fprintf(stderr, "Chat Coordinator - unrecognized command:  ->%s<-\n", command.c_str());
-				util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
-			}
+			fprintf(stderr, "Chat Coordinator - unrecognized command:  ->%s<-\n", command.c_str());
+			util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
 		}
 	}
 

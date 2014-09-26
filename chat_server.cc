@@ -13,6 +13,7 @@
 #include <string>
 #include <unistd.h>
 
+#include "strings.h"
 #include "socket_utils.h"
 
 #include <netinet/in.h>
@@ -25,15 +26,6 @@ using std::vector;
 /* constants */
 const int MESSAGE_MAX_LENGTH = 80;
 const int RECEIVE_TIMEOUT = 60;  // seconds
-
-/* Chat Server Commands */
-const string CMD_SUBMIT = "Submit";
-const string CMD_GET_NEXT = "GetNext";
-const string CMD_GET_ALL = "GetAll";
-const string CMD_LEAVE = "Leave";
-
-/* Chat Coordinator Commands */
-const string CMD_COORD_TERM = "Terminate";
 
 /* function declarations */
 void do_submit(const string&, vector<string>&);
@@ -89,7 +81,6 @@ int main(const int, const char* const argv[]) {
 			// tell the coordinator that we are exiting
 		    // create new UDP socket
 		    const int udp_socket = util_create_server_socket(SOCK_DGRAM, IPPROTO_UDP, NULL, 0); 
-			const string term_command = CMD_COORD_TERM + " " + session_name;
 
 		    // communicate over UDP
 		    struct sockaddr_in coord_addr;
@@ -99,14 +90,20 @@ int main(const int, const char* const argv[]) {
 		    coord_addr.sin_port = htons(coordinator_port);
 		    socklen_t coord_addr_len = sizeof(coord_addr);
 
-	    	if (-1 == util_send_udp(udp_socket, term_command.c_str(), term_command.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
+	    	if (-1 == util_send_udp(udp_socket, CMD_COORDINATOR_TERMINATE.c_str(), CMD_COORDINATOR_TERMINATE.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
 		        fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
-		    }   
-
-		    // clean up and exit
-	    	close(udp_socket);
-			close(server_socket);
-			exit(0);
+		    } 
+			else {
+	    		if (-1 == util_send_udp(udp_socket, session_name.c_str(), session_name.length(), (struct sockaddr *)&coord_addr, coord_addr_len)) {
+		        	fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
+			    }
+				else {
+				    // clean up and exit
+			    	close(udp_socket);
+					close(server_socket);
+					exit(0);
+				}
+			}
 		}
 
 		if (FD_ISSET(server_socket, &rfds)) {
@@ -125,45 +122,73 @@ int main(const int, const char* const argv[]) {
 
 		for (int client_socket = 0; client_socket < nfds; ++client_socket) {
 			if (client_socket != server_socket && FD_ISSET(client_socket, &rfds)) {
-				// read the client message
-				char recv_buffer[BUFFER_SIZE];
-				if (util_recv_tcp(client_socket, recv_buffer, sizeof(recv_buffer)) <= 0) {
+				// let's peek into the stream to see how we are supposed to read the command
+				const int peek_len = 6;
+				char peek_buf[peek_len];
+				if (-1 == util_recv_tcp(client_socket, peek_buf, peek_len - 1, MSG_PEEK)) {
+					fprintf(stderr, "failed to peek command stream.  Error is %s\n", strerror(errno));
 					close(client_socket);
 					FD_CLR(client_socket, &afds);
+					continue;
+				}
+
+				const string peek_msg(peek_buf);
+				string peek_command;
+				if (string::npos != CMD_SERVER_SUBMIT.find(peek_msg)) {
+					peek_command = CMD_SERVER_SUBMIT;
+				}
+				else if (string::npos != CMD_SERVER_GET_NEXT.find(peek_msg)) {
+					peek_command = CMD_SERVER_GET_NEXT;
+				}
+				else if (string::npos != CMD_SERVER_GET_ALL.find(peek_msg)) {
+					peek_command = CMD_SERVER_GET_ALL;
+				}
+				else if (string::npos != CMD_SERVER_LEAVE.find(peek_msg)) {
+					peek_command = CMD_SERVER_LEAVE;
+				}
+				else {
+					fprintf(stderr, "Invalid command |%s|.  Cannot continue.\n", peek_command.c_str());
+					close(client_socket);
+					FD_CLR(client_socket, &afds);
+					continue;
+				}
+
+				// now read the message from the stream for real
+				char recv_buffer[BUFFER_SIZE];
+				if (util_recv_tcp(client_socket, recv_buffer, peek_command.length()) <= 0) {
 					fprintf(stderr, "error or client disconnect: %s\n", strerror(errno));
+					close(client_socket);
+					FD_CLR(client_socket, &afds);
 					continue;
 				}
 
 				// parse message
-				string message(recv_buffer);
-
-				// try to split the string
-				const size_t first_space = message.find_first_of(" ");
-				string command = message;
-				string arguments;
-
-				if (string::npos != first_space) {
-					command = message.substr(0, first_space); 
-					arguments = message.substr(first_space + 1); 
-				}
+				string command(recv_buffer);
 
 				// perform the requested operation
-				if (CMD_SUBMIT == command) {
-					// ensure we have valid strings
-					if (0 == arguments.size()) {
-						fprintf(stderr, "Parsed message has zero length.  Ignoring command.\n");
-						continue;
+				if (CMD_SERVER_SUBMIT == command) {
+					int msg_len;
+					if (-1 == util_recv_tcp(client_socket, msg_len)) {
+						fprintf(stderr, "Failed to receive message length.  Error is %s\n", strerror(errno));
 					}
-
-					do_submit(arguments, all_messages);
+					else {
+						char msg_buf[BUFFER_SIZE + 1];
+						if (-1 == util_recv_tcp(client_socket, msg_buf, BUFFER_SIZE)) {
+							fprintf(stderr, "Failed to receive message.  Error is %s\n", strerror(errno));
+						}
+						else {
+							const string msg(msg_buf);
+							do_submit(msg, all_messages);
+						}
+					}
 				}
-				else if (CMD_GET_NEXT == command) {
+				else if (CMD_SERVER_GET_NEXT == command) {
 					do_get_next(client_socket, next_message_map, all_messages);
 				}
-				else if (CMD_GET_ALL == command) {
+				else if (CMD_SERVER_GET_ALL == command) {
 					do_get_all(client_socket, next_message_map, all_messages);
 				}
-				else if (CMD_LEAVE == command) {
+				else if (CMD_SERVER_LEAVE == command) {
 					close(client_socket);
 					FD_CLR(client_socket, &afds);
 				}
@@ -240,6 +265,7 @@ void do_get_all(const int in_client_socket, map<int, int>& in_next_message, cons
 			fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
 			return;
 		}
+		return;
 	}
 
 	// have n messages

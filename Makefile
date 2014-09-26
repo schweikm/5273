@@ -1,22 +1,27 @@
 # Macro definitions
 CXX = /usr/bin/g++
-CXXFLAGS = -DDEBUG -ansi -pedantic -Wall -Wextra -Weffc++ -g3
+
+BASE_CXX_FLAGS = -ansi -pedantic -Wall -Wextra -Weffc++
+DEBUG_CXX_FLAGS = -DDEBUG -g3
+RELEASE_CXX_FLAGS = -O3
+CXX_FLAGS = $(BASE_CXX_FLAGS) $(RELEASE_CXX_FLAGS)
+
 RM = /bin/rm -f
 
 # make targets
 all: chat_server.exe chat_coordinator.exe chat_client.exe
 
 chat_server.exe: chat_server.cc socket_utils.o
-	$(CXX) $(CXXFLAGS) -o chat_server.exe chat_server.cc socket_utils.o
+	$(CXX) $(CXX_FLAGS) -o chat_server.exe chat_server.cc socket_utils.o
 
 chat_coordinator.exe: chat_coordinator.cc socket_utils.o
-	$(CXX) $(CXXFLAGS) -o chat_coordinator.exe chat_coordinator.cc socket_utils.o
+	$(CXX) $(CXX_FLAGS) -o chat_coordinator.exe chat_coordinator.cc socket_utils.o
 
 chat_client.exe: chat_client.cc socket_utils.o
-	$(CXX) $(CXXFLAGS) -o chat_client.exe chat_client.cc socket_utils.o
+	$(CXX) $(CXX_FLAGS) -o chat_client.exe chat_client.cc socket_utils.o
 
 socket_utils.o: socket_utils.h socket_utils.cc
-	$(CXX) $(CXXFLAGS) -c -o socket_utils.o socket_utils.cc
+	$(CXX) $(CXX_FLAGS) -c -o socket_utils.o socket_utils.cc
 
 clean:
 	@$(RM) chat_server.exe

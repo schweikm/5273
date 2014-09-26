@@ -12,6 +12,7 @@
 
 #include <iostream>
 
+#include "strings.h"
 #include "socket_utils.h"
 
 #include <netdb.h>
@@ -27,19 +28,6 @@ using std::string;
 /* constants */
 const int MAX_MESSAGE_LENGTH = 80;
 const int MAX_SESSION_NAME = 8;
-
-// client commands
-const string CMD_START = "Start";
-const string CMD_JOIN = "Join";
-const string CMD_SUBMIT = "Submit";
-const string CMD_GET_NEXT = "GetNext";
-const string CMD_GET_ALL = "GetAll";
-const string CMD_LEAVE = "Leave";
-const string CMD_EXIT = "Exit";
-
-// coordinator commands
-const string CMD_COORD_FIND = "Find";
-const string CMD_COORD_LEAVE = "Leave";
 
 /* function declarations */
 int print_session_message(const int);
@@ -91,7 +79,7 @@ int main(const int argc, const char** const argv) {
 
 		// these commands require a session name
 		string session_name;
-		if (CMD_START == user_command || CMD_JOIN == user_command) {
+		if (CMD_CLIENT_START == user_command || CMD_CLIENT_JOIN == user_command) {
 			// we need a session name
 			cout << "Session Name:  ";
 			getline(cin, user_arguments);
@@ -105,70 +93,69 @@ int main(const int argc, const char** const argv) {
 		}
 	
 		// execute command
-		if (CMD_START == user_command) {
+		if (CMD_CLIENT_START == user_command) {
 			// send the command to the chat coordinator
-			const string my_command = CMD_START + " " + session_name;
-			if (-1 == util_send_udp(command_socket, my_command.c_str(), my_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+			if (-1 == util_send_udp(command_socket, CMD_COORDINATOR_START.c_str(), CMD_COORDINATOR_START.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
 				fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 			}
 			else {
-				int new_port;
-				if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
+				if (-1 == util_send_udp(command_socket, session_name.c_str(), session_name.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
 					fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 				}
 				else {
-					if (-1 != new_port) {
+					int new_port;
+					if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
+						fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
+					}
+					else {
+						if (-1 != new_port) {
+							const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, new_port);
+							if (-1 != new_socket) {
+								printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
+								active_session_name = session_name;
+								active_session_socket = new_socket;
+							}
+							else {
+								fprintf(stderr, "Failed to start chat session \"%s\"\n", session_name.c_str());
+							}
+						}
+						else {
+							fprintf(stderr, "Chat session \"%s\" has already been started\n", session_name.c_str());
+						}
+					}
+				}
+			}
+		}
+		else if (CMD_CLIENT_JOIN == user_command) {
+			// send the command to the chat coordinator
+			if (-1 == util_send_udp(command_socket, CMD_COORDINATOR_FIND.c_str(), CMD_COORDINATOR_FIND.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+				fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
+			}
+			else {
+				if (-1 == util_send_udp(command_socket, session_name.c_str(), session_name.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+					fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
+				}
+				else {
+					int new_port;
+					if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
+						fprintf(stderr, "Failed to receive session port number.  Error is %s\n", strerror(errno));
+					}
+					else {
+						// join the new session
 						const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, new_port);
 						if (-1 != new_socket) {
-							printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
+							printf("You have joined the chat session \"%s\"\n", session_name.c_str());
 							active_session_name = session_name;
 							active_session_socket = new_socket;
 						}
 						else {
-							fprintf(stderr, "Failed to start chat session \"%s\"\n", session_name.c_str());
+							fprintf(stderr, "Failed to join chat session \"%s\"\n", session_name.c_str());
 						}
 					}
 				}
 			}
 		}
-		else if (CMD_JOIN == user_command) {
-			// send the command to the chat coordinator
-			const string my_command = CMD_COORD_FIND + " " + session_name;
-			if (-1 == util_send_udp(command_socket, my_command.c_str(), my_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
-				fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
-			}
-			else {
-				int new_port;
-				if (-1 == util_recv_udp(command_socket, new_port, (struct sockaddr*)&si_coord, si_coord_len)) {
-					fprintf(stderr, "Failed to receive session port number.  Error is %s\n", strerror(errno));
-				}
-				else {
-					// leave the current session if active
-					if (-1 != active_session_socket) {
-						const string leave_command = CMD_COORD_LEAVE + " " + active_session_name;
-						if (0 == util_send_udp(command_socket, leave_command.c_str(), leave_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
-							active_session_name = "";
-							active_session_socket = -1;
-						}
-						else {
-							fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
-						}
-					}
-
-					// join the new session
-					const int new_socket = util_create_client_socket(SOCK_STREAM, IPPROTO_TCP, coordinator_host, new_port);
-					if (-1 != new_socket) {
-						printf("You have joined the chat session \"%s\"\n", session_name.c_str());
-						active_session_name = session_name;
-						active_session_socket = new_socket;
-					}
-					else {
-						fprintf(stderr, "Failed to join chat session \"%s\"\n", session_name.c_str());
-					}
-				}
-			}
-		}
-		else if (CMD_SUBMIT == user_command) {
+		else if (CMD_CLIENT_SUBMIT == user_command) {
 			// we need a message to submit
 			cout << "Message:  ";
 			getline(cin, user_arguments);
@@ -181,23 +168,32 @@ int main(const int argc, const char** const argv) {
 			}
 
 			// send the message over TCP
-			const string command = CMD_SUBMIT + " " + user_message;
-			if (0 != util_send_tcp(active_session_socket, command.c_str(), command.length())) {
-				fprintf(stderr, "Failed to submit message\n");
+			if (-1 == util_send_tcp(active_session_socket, CMD_SERVER_SUBMIT.c_str(), CMD_SERVER_SUBMIT.length())) {
+				fprintf(stderr, "Failed to send submit command.  Error is %s\n", strerror(errno));
+			}
+			else {
+				if (-1 == util_send_tcp(active_session_socket, user_message.length())) {
+					fprintf(stderr, "Failed to send message length.  Error is %s\n", strerror(errno));
+				}
+				else {
+					if (-1 == util_send_tcp(active_session_socket, user_message.c_str(), user_message.length())) {
+						fprintf(stderr, "Failed to send message.  Error is %s\n", strerror(errno));
+					}
+				}
 			}
 		}
-		else if (CMD_GET_NEXT == user_command) {
+		else if (CMD_CLIENT_GET_NEXT == user_command) {
 			// send the coomand
-			if (0 != util_send_tcp(active_session_socket, CMD_GET_NEXT.c_str(), CMD_GET_NEXT.length())) {
+			if (0 != util_send_tcp(active_session_socket, CMD_SERVER_GET_NEXT.c_str(), CMD_SERVER_GET_NEXT.length())) {
 				fprintf(stderr, "Failure during get_next\n");
 			}
 			else {
 				print_session_message(active_session_socket);
 			}
 		}
-		else if (CMD_GET_ALL == user_command) {
+		else if (CMD_CLIENT_GET_ALL == user_command) {
 			// send the coomand
-			if (0 != util_send_tcp(active_session_socket, CMD_GET_ALL.c_str(), CMD_GET_ALL.length())) {
+			if (0 != util_send_tcp(active_session_socket, CMD_SERVER_GET_ALL.c_str(), CMD_SERVER_GET_ALL.length())) {
 				fprintf(stderr, "Failure during get_all\n");
 			}
 			else {
@@ -207,7 +203,7 @@ int main(const int argc, const char** const argv) {
 				}
 				else {
 					if (-1 == num_msgs) {
-						printf("No new message in the chat session\n");
+						printf("No new messages in the chat session\n");
 					}
 					else {
 						for (int i = 0; i < num_msgs; i++) {
@@ -217,9 +213,10 @@ int main(const int argc, const char** const argv) {
 				}
 			}
 		}
-		else if (CMD_LEAVE == user_command) {
-			const string leave_command = CMD_COORD_LEAVE + " " + active_session_name;
-			if (0 == util_send_udp(command_socket, leave_command.c_str(), leave_command.length(), (struct sockaddr*)&si_coord, si_coord_len)) {
+		else if (CMD_CLIENT_LEAVE == user_command) {
+			if (0 == util_send_tcp(active_session_socket, CMD_SERVER_LEAVE.c_str(), CMD_SERVER_LEAVE.length())) {
+				printf("You have left the chat session \"%s\"\n", active_session_name.c_str());
+				close(active_session_socket);
 				active_session_name = "";
 				active_session_socket = -1;
 			}
@@ -227,7 +224,7 @@ int main(const int argc, const char** const argv) {
 				fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
 			}
 		}
-		else if (CMD_EXIT == user_command) {
+		else if (CMD_CLIENT_EXIT == user_command) {
 			if (-1 != active_session_socket) {
 				close(active_session_socket);
 			}
