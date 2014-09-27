@@ -1,6 +1,9 @@
-// chat_coordinator.cc
-// Marc Schweikert
-// CSCI 5273 Fall 2014
+/**
+ * @file chat_coordinator.cc
+ * @author Marc Schweikert
+ * @date 26 September 2014
+ * @brief Chat Coordinator implementation
+ */
 
 #include <cassert>
 #include <cerrno>
@@ -21,9 +24,7 @@
 using std::map;
 using std::string;
 
-
-/* constants */
-const int MAX_SESSION_NAME_SIZE = 8;
+/** Name of the chat server executable we will spawn */
 const string SERVER_EXE = "chat_server.exe";
 
 
@@ -32,10 +33,11 @@ int do_start(const string&, map<string, int>&, const int);
 int do_find(const string&, const map<string, int>&);
 void do_terminate(const string&, map<string, int>&);
 
-
-/*
- * main
- */
+/**
+  * Main - entry point of program
+  *
+  * @return 0 if success; any other value if error
+  */
 int main() {
 	// this will be the mapping between chat session names and TCP port numbers
 	map<string, int> chat_session_map;
@@ -65,30 +67,23 @@ int main() {
 		if(-1 == util_recv_udp(coordinator_socket, receive_buffer, BUFFER_SIZE - 1, (struct sockaddr *)&remote_addr, remote_addr_len)) {
 			fprintf(stderr, "Error reading socket.  Error is %s\n", strerror(errno));
 		}
-		const string arguments(receive_buffer);
-
-		// we only support 8 character names
-		string session_name = arguments;
-		if (arguments.length() > MAX_SESSION_NAME_SIZE) {
-			fprintf(stderr, "Chat session name is greater than %d characters - truncating.\n", MAX_SESSION_NAME_SIZE);
-			session_name = arguments.substr(0, MAX_SESSION_NAME_SIZE);
-		}
+		const string session_name(receive_buffer);
 
 		// perform the requested operation
 		if (CMD_COORDINATOR_START == command) {
 			const int code = do_start(session_name, chat_session_map, server_port);
-			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
+			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr);
 		}
 		else if (CMD_COORDINATOR_FIND == command) {
 			const int code = do_find(session_name, chat_session_map);
-			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr, remote_addr_len);
+			util_send_udp(coordinator_socket, code, (struct sockaddr *)&remote_addr);
 		}
 		else if (CMD_COORDINATOR_TERMINATE == command) {
 			do_terminate(session_name, chat_session_map);
 		}
 		else {
 			fprintf(stderr, "Chat Coordinator - unrecognized command:  ->%s<-\n", command.c_str());
-			util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr, remote_addr_len);
+			util_send_udp(coordinator_socket, -1, (struct sockaddr *)&remote_addr);
 		}
 	}
 
@@ -96,11 +91,20 @@ int main() {
 	return 0;
 }
 
-
-/*
- * do_start
- */
-int do_start(const string& in_session_name, map<string, int>& in_chat_session_map, const int in_server_port) {
+/**
+  * Starts a new chat session server with the requested name.
+  * A new process is created for each session server.
+  *
+  * @pre in_session_name is a non-empty string
+  * @post A new session server has been spawned
+  * @param in_session_name Name of the chat session server
+  * @param in_chat_session_map Contains a mapping of names to TCP port numbers
+  * @param in_server_port UDP port number of the chat coordinator
+  * @return TCP port of the session server if successul; -1 if error
+  */
+int do_start(const string& in_session_name,
+             map<string, int>& in_chat_session_map,
+             const int in_server_port) {
 	int return_code = 0;
 	// see if an existing chat session is available
 	if ( in_chat_session_map.end() == in_chat_session_map.find(in_session_name)) {
@@ -157,11 +161,17 @@ int do_start(const string& in_session_name, map<string, int>& in_chat_session_ma
 	return return_code;
 }
 
-
-/*
- * do_find
- */
-int do_find(const string& in_session_name, const map<string, int>& in_chat_session_map) {
+/**
+  * Finds the TCP port number of an existing chat session server.
+  *
+  * @pre in_session_name is a non-empty string
+  * @post none
+  * @param in_session_name Name of the chat session server
+  * @param in_chat_session_map Contains a mapping of names to TCP port numbers
+  * @return TCP port of the session server if successul; -1 if error
+  */
+int do_find(const string& in_session_name,
+            const map<string, int>& in_chat_session_map) {
 	const map<string, int>::const_iterator find_iterator = in_chat_session_map.find(in_session_name);
 	if ( in_chat_session_map.end() == find_iterator) {
 		return -1;
@@ -170,10 +180,16 @@ int do_find(const string& in_session_name, const map<string, int>& in_chat_sessi
 	return find_iterator->second;
 }
 
-/*
- * do_terminate
- */
-void do_terminate(const string& in_session_name, map<string, int>& in_chat_session_map) {
+/**
+  * Removes references to the chat session server.
+  *
+  * @pre in_session_name is a non-empty string
+  * @post none
+  * @param in_session_name Name of the chat session server
+  * @param in_chat_session_map Contains a mapping of names to TCP port numbers
+  */
+void do_terminate(const string& in_session_name,
+                  map<string, int>& in_chat_session_map) {
 	in_chat_session_map.erase(in_session_name);
 }
 

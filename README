@@ -1,13 +1,73 @@
 Marc Schweikert
 CSCI 5273 Fall 2014
 September 26, 2014
+Programming Assignment 1
 
 
 ----------------------------
 -- How to Compile Program --
 ----------------------------
 
+Nothing special here - just the regular make command.  You can modify the
+CXX_FLAGS macro in the Makefile to DEBUG or RELEASE mode.
+DEBUG mode shows the network traffic.
+
+
+user$  make
+
 
 ------------------------
 -- How to Run Program --
 ------------------------
+
+COORDINATOR:
+Start the chat coordinator:
+
+user$  ./chat_coordinator.exe
+
+
+CLIENT:
+Start the chat client with the hostname and port of the chat coordinator
+as arguments.  The step above will print the UDP port number that the
+coordinator is running on.
+
+user$  ./chat_client.exe 127.0.0.1 55555
+
+
+----------------------------
+-- Current Program Status --
+----------------------------
+
+My program fully implements the required functionality in the specification.
+I do not know of any deficiencies.
+
+
+-----------------------
+-- Program Structure --
+-----------------------
+
+chat_coordinator.cc
+    Implements the chat coordinator
+
+chat_server.cc
+    Implements the chat server
+
+chat_client.cc
+    Implements the chat client
+
+socket_utils.h
+    Function declarations for the socket utilities
+
+socket_utils.cc
+    Implements utility functions for creating sockets, sending and receiving
+    data over TCP or UDP
+
+strings.h
+    String constant values for use in the program
+
+
+--------------------
+-- Extra Features --
+--------------------
+
+TODO!

@@ -1,6 +1,9 @@
-// chat_client.cc
-// Marc Schweikert
-// CSCI 5273
+/**
+ * @file chat_client.cc
+ * @author Marc Schweikert
+ * @date 26 September 2014
+ * @brief Chat client implementation
+ */
 
 #include <cassert>
 #include <cerrno>
@@ -25,11 +28,11 @@ using std::endl;
 using std::string;
 
 
-/* constants */
+/** Maximum length of a message that can be submitted */
 const int MAX_MESSAGE_LENGTH = 80;
+/** Maximum length of a chat session name */
 const int MAX_SESSION_NAME = 8;
 
-/* function declarations */
 int do_start(const int, const char* const, const struct sockaddr_in&, const string&);
 int do_join(const int, const char* const, const struct sockaddr_in&, const string&);
 int do_submit(const int);
@@ -38,9 +41,13 @@ int do_get_all(const int);
 int print_session_message(const int);
 
 
-/*
- * main
- */
+/**
+  * Main - entry point of program
+  *
+  * @param argc Number of command line arguments
+  * @param argv Command line arguments
+  * @return 0 if success; any other value if error
+  */
 int main(const int argc, const char** const argv) {
 	if (3 != argc) {
 		fprintf(stderr, "Usage: chat_client.exe host/IP port\n");
@@ -160,14 +167,28 @@ int main(const int argc, const char** const argv) {
 	return 0;
 }
 
-int do_start(const int in_socket, const char* const in_coord_host, const struct sockaddr_in& in_coord, const string& in_session_name) {
+/**
+  * Starts a new chat session server.  Returns the TCP port number of chat session.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post Chat session has been started
+  * @param in_socket Socket file descriptor to send UDP message to chat coordinator
+  * @param in_coord_host Hostname / IP address of the chat coordinator
+  * @param in_coord Address information for the chat coordinator
+  * @param in_session_name Chat session name to start
+  * @return TCP port number of new chat session if successful; -1 if error
+  */
+int do_start(const int in_socket,
+             const char* const in_coord_host,
+             const struct sockaddr_in& in_coord,
+             const string& in_session_name) {
 	// send the command to the chat coordinator
-	if (-1 == util_send_udp(in_socket, CMD_COORDINATOR_START.c_str(), CMD_COORDINATOR_START.length(), (struct sockaddr*)&in_coord, sizeof(in_coord))) {
+	if (-1 == util_send_udp(in_socket, CMD_COORDINATOR_START.c_str(), CMD_COORDINATOR_START.length(), (struct sockaddr*)&in_coord)) {
 		fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 		return -1;
 	}
 
-	if (-1 == util_send_udp(in_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr*)&in_coord, sizeof(in_coord))) {
+	if (-1 == util_send_udp(in_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr*)&in_coord)) {
 		fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 		return -1;
 	}
@@ -198,14 +219,28 @@ int do_start(const int in_socket, const char* const in_coord_host, const struct 
 	return new_socket;
 }
 
-int do_join(const int in_socket, const char* const in_coord_host, const struct sockaddr_in& in_coord, const string& in_session_name) {
+/**
+  * Joins an existing chat session server.  Returns the TCP port number of chat session.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post Chat session has been joined
+  * @param in_socket Socket file descriptor to send UDP message to chat coordinator
+  * @param in_coord_host Hostname / IP address of the chat coordinator
+  * @param in_coord Address information for the chat coordinator
+  * @param in_session_name Chat session name to join
+  * @return TCP port number of new chat session if successful; -1 if error
+  */
+int do_join(const int in_socket,
+            const char* const in_coord_host,
+            const struct sockaddr_in& in_coord,
+            const string& in_session_name) {
 	// send the command to the chat coordinator
-	if (-1 == util_send_udp(in_socket, CMD_COORDINATOR_FIND.c_str(), CMD_COORDINATOR_FIND.length(), (struct sockaddr*)&in_coord, sizeof(in_coord))) {
+	if (-1 == util_send_udp(in_socket, CMD_COORDINATOR_FIND.c_str(), CMD_COORDINATOR_FIND.length(), (struct sockaddr*)&in_coord)) {
 		fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 		return -1;
 	}
 
-	if (-1 == util_send_udp(in_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr*)&in_coord, sizeof(in_coord))) {
+	if (-1 == util_send_udp(in_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr*)&in_coord)) {
 		fprintf(stderr, "Failed to send command coordinator.  Error is %s\n", strerror(errno));
 		return -1;
 	}
@@ -227,6 +262,14 @@ int do_join(const int in_socket, const char* const in_coord_host, const struct s
 	return new_socket;
 }
 
+/**
+  * Submits a message to the chat session.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post Message has been submitted to chat session
+  * @param in_socket Socket file descriptor for chat session server
+  * @return 0 if successful; -1 if error
+  */
 int do_submit(const int in_socket) {
 	// we need a message to submit
 	string user_arguments;
@@ -259,6 +302,14 @@ int do_submit(const int in_socket) {
 	return 0;
 }
 
+/**
+  * Gets the next unread message from the chat session server.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post One unread message has been retrieved from chat session if it exists
+  * @param in_socket Socket file descriptor for chat session server
+  * @return 0 if successful; -1 if error
+  */
 int do_get_next(const int in_socket) {
 	// send the coomand
 	if (0 != util_send_tcp(in_socket, CMD_SERVER_GET_NEXT.c_str(), CMD_SERVER_GET_NEXT.length())) {
@@ -269,6 +320,14 @@ int do_get_next(const int in_socket) {
 	return print_session_message(in_socket);
 }
 
+/**
+  * Gets all unread messages from the chat session server.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post All unread messages have been retrieved from chat session if they exist
+  * @param in_socket Socket file descriptor for chat session server
+  * @return 0 if successful; -1 if error
+  */
 int do_get_all(const int in_socket) {
 	// send the coomand
 	if (0 != util_send_tcp(in_socket, CMD_SERVER_GET_ALL.c_str(), CMD_SERVER_GET_ALL.length())) {
@@ -294,6 +353,14 @@ int do_get_all(const int in_socket) {
 	return 0;
 }
 
+/**
+  * Implementation of GetNext and GetAll methods.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post Requested number of unread messages have been retrieved from chat session if they exist
+  * @param in_socket Socket file descriptor for chat session server
+  * @return 0 if successful; -1 if error
+  */
 int print_session_message(const int in_socket) {
 	// get the message length first
 	int msg_len;

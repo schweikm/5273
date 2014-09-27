@@ -1,6 +1,9 @@
-// chat_server.cc
-// Marc Schweikert
-// CSCI 5273
+/**
+ * @file chat_server.cc
+ * @author Marc Schweikert
+ * @date 26 September 2014
+ * @brief Chat Server implementation
+ */
 
 #include <cassert>
 #include <cerrno>
@@ -23,10 +26,8 @@ using std::map;
 using std::string;
 using std::vector;
 
-
-/* constants */
-const int MESSAGE_MAX_LENGTH = 80;
-const int RECEIVE_TIMEOUT = 60;  // seconds
+/** How long to wait for input on any client connection.  Value is in seconds. */
+const int RECEIVE_TIMEOUT = 60;
 
 /* function declarations */
 void handle_select_timeout(const int, const char* const, const int, const string&);
@@ -35,11 +36,13 @@ int do_get_next(const int, map<int, int>&, const vector<string>&);
 int do_get_all(const int, map<int, int>&, const vector<string>&);
 int send_chat_messages(const int, const vector<string>&, const unsigned int, const unsigned int);
 
-
-/*
- * main
- */
-int main(const int, const char* const argv[]) {
+/**
+  * Main - entry point of program
+  *
+  * @param argv Command line arguments
+  * @return 0 if success; any other value if error
+  */
+int main(const int, const char** const argv) {
 	const int server_socket = atoi(argv[0]);
 	const int coordinator_port = atoi(argv[1]);
 	const string session_name = argv[2];
@@ -170,7 +173,20 @@ int main(const int, const char* const argv[]) {
 	return 0;
 }
 
-void handle_select_timeout(const int in_server_socket, const char* const in_coord_host, const int in_coord_port, const string& in_session_name) {
+/**
+  * Cleanly shuts down this chat session server when select() times out.
+  *
+  * @pre in_server_socket is a valid socket file descriptor
+  * @post none
+  * @param in_server_socket Socket file descriptor for this session server
+  * @param in_coord_host Hostname / IP address of the chat coordinator
+  * @param in_coord_port UDP port number of the chat coordinator
+  * @param in_session_name Name of this chat session server
+  */
+void handle_select_timeout(const int in_server_socket,
+                           const char* const in_coord_host,
+                           const int in_coord_port,
+                           const string& in_session_name) {
 	printf("Chat server closing after select timeout!\n");
 
 	// tell the coordinator that we are exiting
@@ -184,12 +200,12 @@ void handle_select_timeout(const int in_server_socket, const char* const in_coor
 		exit(-1);
 	}
 
-	if (-1 == util_send_udp(udp_socket, CMD_COORDINATOR_TERMINATE.c_str(), CMD_COORDINATOR_TERMINATE.length(), (struct sockaddr *)&coord_addr, sizeof(coord_addr))) {
+	if (-1 == util_send_udp(udp_socket, CMD_COORDINATOR_TERMINATE.c_str(), CMD_COORDINATOR_TERMINATE.length(), (struct sockaddr *)&coord_addr)) {
 		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
 		exit(-1);
 	}
 
-	if (-1 == util_send_udp(udp_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr *)&coord_addr, sizeof(coord_addr))) {
+	if (-1 == util_send_udp(udp_socket, in_session_name.c_str(), in_session_name.length(), (struct sockaddr *)&coord_addr)) {
 		fprintf(stderr, "sendto called failed!  Error is %s\n", strerror(errno));
 		exit(-1);
 	}
@@ -200,11 +216,16 @@ void handle_select_timeout(const int in_server_socket, const char* const in_coor
 	exit(0);
 }
 
-
-/*
- * do_submit
- */
-int do_submit(const int in_socket, vector<string>& in_all_messages) {
+/**
+  * Stores a message in the chat history.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post received message has been stored in the chat history
+  * @param in_socket Socket file descriptor to receive data on
+  * @param in_all_messages Data structure that holds the chat history
+  */
+int do_submit(const int in_socket,
+              vector<string>& in_all_messages) {
 	int msg_len;
 	if (-1 == util_recv_tcp(in_socket, msg_len)) {
 		fprintf(stderr, "Failed to receive message length.  Error is %s\n", strerror(errno));
@@ -217,28 +238,31 @@ int do_submit(const int in_socket, vector<string>& in_all_messages) {
 		return -1;
 	}
 
-	// we only support 80 character messages
-	string message_text(msg_buf);
-	if (message_text.length() > MESSAGE_MAX_LENGTH) {
-		fprintf(stderr, "Message is greater than %d characters - truncating.\n", MESSAGE_MAX_LENGTH);
-		message_text = message_text.substr(0, MESSAGE_MAX_LENGTH);
-	}
-
 	// store the message in the chat history
+	string message_text(msg_buf);
 	in_all_messages.push_back(message_text);
 
 	return 0;
 }
 
-/*
- * do_get_next
- */
-int do_get_next(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
+/**
+  * Gets the next unread message in the chat history for the specified client.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post in_next_message has been updated with the last read message
+  * @param in_socket Socket file descriptor to receive data on
+  * @param in_next_message Data structure that holds the index of the last read message
+  * @param in_all_messages Data structure that holds the chat history
+  * @return 0 if successful; -1 if error
+  */
+int do_get_next(const int in_socket,
+                map<int, int>& in_next_message,
+                const vector<string>& in_all_messages) {
 	// let's make sure that the next message exists
-	map<int, int>::const_iterator next_it = in_next_message.find(in_client_socket);
+	map<int, int>::const_iterator next_it = in_next_message.find(in_socket);
 	if (in_next_message.end() == next_it) {
-		fprintf(stderr, "failed to find last message index for client %d\n", in_client_socket);
-		util_send_tcp(in_client_socket, -1);
+		fprintf(stderr, "failed to find last message index for client %d\n", in_socket);
+		util_send_tcp(in_socket, -1);
 		return -1;
 	}
 
@@ -247,7 +271,7 @@ int do_get_next(const int in_client_socket, map<int, int>& in_next_message, cons
 
 	// no new messages
 	if (static_cast<size_t>(stop_index) > in_all_messages.size()) {
-		if (-1 == util_send_tcp(in_client_socket, -1)) {
+		if (-1 == util_send_tcp(in_socket, -1)) {
 			fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
 			return -1;
 		}
@@ -257,26 +281,35 @@ int do_get_next(const int in_client_socket, map<int, int>& in_next_message, cons
 	}
 
 	// send the message
-	if (0 == send_chat_messages(in_client_socket, in_all_messages, start_index, stop_index)) {
+	if (0 == send_chat_messages(in_socket, in_all_messages, start_index, stop_index)) {
 		// update the index if successful
-		in_next_message[in_client_socket] = stop_index;
+		in_next_message[in_socket] = stop_index;
 	}
 	else {
-		util_send_tcp(in_client_socket, -1);
+		util_send_tcp(in_socket, -1);
 	}
 
 	return 0;
 }
 
-/*
- * do_get_all
- */
-int do_get_all(const int in_client_socket, map<int, int>& in_next_message, const vector<string>& in_all_messages) {
+/**
+  * Gets all unread messages in the chat history for the specified client.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post in_next_message has been updated with the last read message
+  * @param in_socket Socket file descriptor to receive data on
+  * @param in_next_message Data structure that holds the index of the last read message
+  * @param in_all_messages Data structure that holds the chat history
+  * @return 0 if successful; -1 if error
+  */
+int do_get_all(const int in_socket,
+               map<int, int>& in_next_message,
+               const vector<string>& in_all_messages) {
 	// let's make sure that the next message exists
-	map<int, int>::const_iterator next_it = in_next_message.find(in_client_socket);
+	map<int, int>::const_iterator next_it = in_next_message.find(in_socket);
 	if (in_next_message.end() == next_it) {
-		fprintf(stderr, "failed to find last message index for client %d\n", in_client_socket);
-		util_send_tcp(in_client_socket, -1);
+		fprintf(stderr, "failed to find last message index for client %d\n", in_socket);
+		util_send_tcp(in_socket, -1);
 		return -1;
 	}
 
@@ -288,7 +321,7 @@ int do_get_all(const int in_client_socket, map<int, int>& in_next_message, const
 
 	// no new messages
 	if (0 == num_msgs) {
-		if (-1 == util_send_tcp(in_client_socket, -1)) {
+		if (-1 == util_send_tcp(in_socket, -1)) {
 			fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
 			return -1;
 		}
@@ -298,34 +331,45 @@ int do_get_all(const int in_client_socket, map<int, int>& in_next_message, const
 	}
 
 	// have n messages
-	if (-1 == util_send_tcp(in_client_socket, num_msgs)) {
+	if (-1 == util_send_tcp(in_socket, num_msgs)) {
 		fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
 		return -1;
 	}
 
 	// then send the messages
-	if (0 == send_chat_messages(in_client_socket, in_all_messages, start_index, stop_index)) {
+	if (0 == send_chat_messages(in_socket, in_all_messages, start_index, stop_index)) {
 		// update the index if successful
-		in_next_message[in_client_socket] = stop_index;
+		in_next_message[in_socket] = stop_index;
 	}
 	else {
-		util_send_tcp(in_client_socket, -1);
+		util_send_tcp(in_socket, -1);
 	}
 
 	return 0;
 }
 
-/*
- * send_chat_messages
- */
-int send_chat_messages(const int in_client_socket, const vector<string>& in_all_messages, const unsigned int start_index, const unsigned int stop_index) {
+/**
+  * Implementation of GetNext and GetAll commands.
+  *
+  * @pre in_socket is a valid socket file descriptor
+  * @post none
+  * @param in_socket Socket file descriptor to receive data on
+  * @param in_all_messages Data structure that holds the chat history
+  * @param start_index Index of the next unread message
+  * @param stop_index Index of the last message to retrieve
+  * @return 0 if successful; -1 if error
+  */
+int send_chat_messages(const int in_socket,
+                       const vector<string>& in_all_messages,
+                       const unsigned int start_index,
+                       const unsigned int stop_index) {
 	if (start_index > stop_index) {
-		fprintf(stderr, "start index > stop index for client %d\n", in_client_socket);
+		fprintf(stderr, "start index > stop index for client %d\n", in_socket);
 		return -1;
 	}
 
 	if (start_index >= in_all_messages.size() || stop_index > in_all_messages.size()) {
-		fprintf(stderr, "message index out of range for client %d\n", in_client_socket);
+		fprintf(stderr, "message index out of range for client %d\n", in_socket);
 		return -1;
 	}
 
@@ -334,10 +378,10 @@ int send_chat_messages(const int in_client_socket, const vector<string>& in_all_
 		const string message = in_all_messages.at(i);
 
 		// send the length
-		util_send_tcp(in_client_socket, message.length());
+		util_send_tcp(in_socket, message.length());
 
 		// then the message itself
-		util_send_tcp(in_client_socket, message.c_str(), message.length());
+		util_send_tcp(in_socket, message.c_str(), message.length());
 	}
 
 	return 0;
