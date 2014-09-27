@@ -8,10 +8,9 @@ Programming Assignment 1
 -- How to Compile Program --
 ----------------------------
 
-Nothing special here - just the regular make command.  You can modify the
-CXX_FLAGS macro in the Makefile to DEBUG or RELEASE mode.
+Nothing special here - just the regular make command.
+You can modify the CXX_FLAGS macro in the Makefile to DEBUG or RELEASE mode.
 DEBUG mode shows the network traffic.
-
 
 user$  make
 
@@ -31,7 +30,8 @@ Start the chat client with the hostname and port of the chat coordinator
 as arguments.  The step above will print the UDP port number that the
 coordinator is running on.
 
-user$  ./chat_client.exe 127.0.0.1 55555
+user$  ./chat_client.exe <coordinator host> <coordinator port>
+user$  ./chat_client.exe elra-03.cs.colorado.edu 55555
 
 
 ----------------------------
@@ -60,7 +60,7 @@ socket_utils.h
 
 socket_utils.cc
     Implements utility functions for creating sockets, sending and receiving
-    data over TCP or UDP
+    data over TCP or UDP, etc.
 
 strings.h
     String constant values for use in the program
@@ -70,4 +70,9 @@ strings.h
 -- Extra Features --
 --------------------
 
-TODO!
+You can create documentation using doxygen!  Simply run:
+
+user$  make doxygen
+
+and look in doc/doxygen for the HTML files.
+
