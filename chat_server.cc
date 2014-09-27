@@ -187,7 +187,7 @@ void handle_select_timeout(const int in_server_socket,
                            const char* const in_coord_host,
                            const int in_coord_port,
                            const string& in_session_name) {
-	printf("Chat server closing after select timeout!\n");
+	printf("Chat server \"%s\" closing after select timeout!\n", in_session_name.c_str());
 
 	// tell the coordinator that we are exiting
 	// create new UDP socket

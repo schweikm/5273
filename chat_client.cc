@@ -106,10 +106,7 @@ int main(const int argc, const char** const argv) {
 		// execute command
 		if (CMD_CLIENT_START == user_command) {
 			const int val = do_start(command_socket, coordinator_host, si_coord, session_name);
-			if (-1 == val) {
-				fprintf(stderr, "Failure in do_start\n");
-			}
-			else {
+			if (-1 != val) {
 				printf("A new chat session \"%s\" has been created and you have joined this session\n", session_name.c_str());
 				active_session_name = session_name;
 				active_session_socket = val;
@@ -117,29 +114,20 @@ int main(const int argc, const char** const argv) {
 		}
 		else if (CMD_CLIENT_JOIN == user_command) {
 			const int val = do_join(command_socket, coordinator_host, si_coord, session_name);
-			if (-1 == val) {
-				fprintf(stderr, "Failure in do_join\n");
-			}
-			else {
+			if (-1 != val) {
 				printf("You have joined the chat session \"%s\"\n", session_name.c_str());
 				active_session_name = session_name;
 				active_session_socket = val;
 			}
 		}
 		else if (CMD_CLIENT_SUBMIT == user_command) {
-			if(-1 == do_submit(active_session_socket)) {
-				fprintf(stderr, "Failure in do_submit\n");
-			}
+			do_submit(active_session_socket);
 		}
 		else if (CMD_CLIENT_GET_NEXT == user_command) {
-			if (-1 == do_get_next(active_session_socket)) {
-				fprintf(stderr, "Failure in do_get_next\n");
-			}
+			do_get_next(active_session_socket);
 		}
 		else if (CMD_CLIENT_GET_ALL == user_command) {
-			if (-1 == do_get_all(active_session_socket)) {
-				fprintf(stderr, "Failure in do_get_all\n");
-			}
+			do_get_all(active_session_socket);
 		}
 		else if (CMD_CLIENT_LEAVE == user_command) {
 			if (0 == util_send_tcp(active_session_socket, CMD_SERVER_LEAVE.c_str(), CMD_SERVER_LEAVE.length())) {
@@ -147,9 +135,6 @@ int main(const int argc, const char** const argv) {
 				close(active_session_socket);
 				active_session_name = "";
 				active_session_socket = -1;
-			}
-			else {
-				fprintf(stderr, "Failed to leave chat session \"%s\"\n", active_session_name.c_str());
 			}
 		}
 		else if (CMD_CLIENT_EXIT == user_command) {
