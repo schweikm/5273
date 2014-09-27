@@ -43,7 +43,6 @@ int main(const int, const char* const argv[]) {
 	const int server_socket = atoi(argv[0]);
 	const int coordinator_port = atoi(argv[1]);
 	const string session_name = argv[2];
-	printf("Chat Server session \"%s\" started.  Coordinator UDP port is %d\n", session_name.c_str(), coordinator_port);
 
 	// let's start up our data structure
 	map<int, int> next_message_map;
@@ -245,6 +244,19 @@ int do_get_next(const int in_client_socket, map<int, int>& in_next_message, cons
 
 	const int start_index = next_it->second;
 	const int stop_index = start_index + 1;
+
+	// no new messages
+	if (static_cast<size_t>(stop_index) > in_all_messages.size()) {
+		if (-1 == util_send_tcp(in_client_socket, -1)) {
+			fprintf(stderr, "Failed to send number of messages.  Error is %s\n", strerror(errno));
+			return -1;
+		}
+
+		// nothing more to do
+		return 0;
+	}
+
+	// send the message
 	if (0 == send_chat_messages(in_client_socket, in_all_messages, start_index, stop_index)) {
 		// update the index if successful
 		in_next_message[in_client_socket] = stop_index;
